@@ -5,21 +5,74 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "crmvoz",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.crmvoz.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "O CRM-VOZ grava apenas a sua voz para criar notas durante ou após ligações.",
+        "NSContactsUsageDescription": "Importar e associar contatos às suas notas de voz.",
+        "NSCalendarsUsageDescription": "Exibir compromissos do calendário junto com ligações agendadas no app.",
+        "NSSpeechRecognitionUsageDescription": "Transcrever suas notas de voz em texto."
+      }
     },
     "android": {
+      "package": "com.crmvoz.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "permissions": [
+        "RECORD_AUDIO",
+        "READ_CONTACTS",
+        "WRITE_CONTACTS",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR",
+        "POST_NOTIFICATIONS",
+        "READ_PHONE_STATE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "lembretes-ligacao"
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Permitir acesso aos contatos para importar ao CRM-VOZ."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Permitir acesso ao calendário para exibir compromissos."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Gravar apenas a sua voz para notas (não grava o interlocutor)."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
