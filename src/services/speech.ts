@@ -138,6 +138,7 @@ export type SpeakResult = {
 /**
  * Fala o texto. Preferência: OpenAI pt-BR natural.
  * `heard` só é true se houve reprodução real.
+ * Tem timeout global para nunca travar o assistente.
  */
 export async function speakText(text: string): Promise<SpeakResult> {
   const trimmed = text.trim();
@@ -154,10 +155,10 @@ export async function speakText(text: string): Promise<SpeakResult> {
   speaking = false;
   speaking = true;
 
-  let heard = false;
-  try {
-    if (generation !== speakGeneration) return { heard: false };
+  const run = async (): Promise<boolean> => {
+    if (generation !== speakGeneration) return false;
 
+    let heard = false;
     if (await isOpenAiProxyConfigured()) {
       try {
         heard = await speakWithOpenAiTts(trimmed);
@@ -167,7 +168,7 @@ export async function speakText(text: string): Promise<SpeakResult> {
       }
     }
 
-    if (generation !== speakGeneration) return { heard: false };
+    if (generation !== speakGeneration) return false;
 
     if (!heard) {
       heard = await speakLocal(trimmed, generation);
@@ -177,12 +178,27 @@ export async function speakText(text: string): Promise<SpeakResult> {
       // Libertar foco de áudio no Samsung antes do mic
       await new Promise((r) => setTimeout(r, 700));
     }
+    return heard;
+  };
+
+  try {
+    const heard = await Promise.race([
+      run(),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          if (generation === speakGeneration) {
+            void stopSpeaking();
+          }
+          resolve(false);
+        }, 22_000);
+      }),
+    ]);
+    return { heard };
   } finally {
     if (generation === speakGeneration) {
       speaking = false;
     }
   }
-  return { heard };
 }
 
 export async function stopSpeaking(): Promise<void> {

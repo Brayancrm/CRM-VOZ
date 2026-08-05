@@ -117,14 +117,41 @@ export function SecretinaAssistantProvider({
   }, []);
 
   const openAssistant = useCallback((opts?: OpenAssistantOpts) => {
-    micBusyRef.current = true;
+    // Cancela TTS/wake presos de sessões anteriores
+    void import('@/services/speech')
+      .then((m) => m.stopSpeaking())
+      .catch(() => {});
     abortSpeechRecognition();
+    micBusyRef.current = true;
     setWakeListening(false);
-    // Definir flags ANTES de abrir o modal, para o effect do modal as ver.
+    // Se já estava aberto, fecha e reabre para forçar reset do modal
+    const alreadyOpen = assistantOpenRef.current;
     setGreetFirstOnOpen(Boolean(opts?.greetFirst));
     setAutoListenOnOpen(Boolean(opts?.autoListen ?? opts?.greetFirst));
+    if (alreadyOpen) {
+      setAssistantOpen(false);
+      assistantOpenRef.current = false;
+      setTimeout(() => {
+        micBusyRef.current = true;
+        setAssistantOpen(true);
+        assistantOpenRef.current = true;
+      }, 80);
+      return;
+    }
     setAssistantOpen(true);
     assistantOpenRef.current = true;
+  }, []);
+
+  const closeAssistant = useCallback(() => {
+    void import('@/services/speech')
+      .then((m) => m.stopSpeaking())
+      .catch(() => {});
+    abortSpeechRecognition();
+    setAssistantOpen(false);
+    assistantOpenRef.current = false;
+    setAutoListenOnOpen(false);
+    setGreetFirstOnOpen(false);
+    micBusyRef.current = false;
   }, []);
 
   const openAssistantFromUrl = useCallback(
@@ -149,14 +176,6 @@ export function SecretinaAssistantProvider({
     });
     return () => sub.remove();
   }, [openAssistantFromUrl]);
-
-  const closeAssistant = useCallback(() => {
-    setAssistantOpen(false);
-    assistantOpenRef.current = false;
-    setAutoListenOnOpen(false);
-    setGreetFirstOnOpen(false);
-    micBusyRef.current = false;
-  }, []);
 
   const clearAutoListen = useCallback(() => {
     setAutoListenOnOpen(false);

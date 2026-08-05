@@ -78,15 +78,22 @@ async function fetchSpeechMp3(
 
   let response: Response;
   try {
-    response = await fetch(`${baseUrl}/api/secretina/tts`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        text: text.slice(0, 4000),
-        voice,
-        gender,
-      }),
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12_000);
+    try {
+      response = await fetch(`${baseUrl}/api/secretina/tts`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          text: text.slice(0, 4000),
+          voice,
+          gender,
+        }),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   } catch (e) {
     console.warn('OpenAI TTS proxy network', e);
     return null;

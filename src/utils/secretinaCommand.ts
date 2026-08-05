@@ -4,6 +4,22 @@ import { parseSpokenDateTime } from '@/utils/spokenDateTime';
 export type SecretinaIntent =
   | { type: 'note'; contactQuery: string; noteBody: string }
   | { type: 'schedule'; contactQuery: string; whenRaw: string }
+  | {
+      type: 'list_agenda';
+      contactQuery?: string;
+      whenRaw?: string;
+    }
+  | {
+      type: 'cancel_schedule';
+      contactQuery?: string;
+      whenRaw?: string;
+    }
+  | {
+      type: 'reschedule';
+      contactQuery?: string;
+      fromWhenRaw?: string;
+      whenRaw: string;
+    }
   | { type: 'unknown'; reason: string };
 
 export type ContactMatchStatus = 'found' | 'ambiguous' | 'none';
@@ -19,9 +35,27 @@ type ContactLike = { id: string; name: string };
 /** Em JS, \b falha com acentos (ã, ç…). Usar texto já normalizado sem acentos. */
 function hasScheduleKeyword(norm: string): boolean {
   return (
-    /\b(agenda|agende|agendar|agendamento|agendamentos|marca|marque|marcar|reagenda|reagendar)\b/.test(
+    /\b(agenda|agende|agendar|agendamento|agendamentos|marca|marque|marcar)\b/.test(
       norm
     ) || /\b(ligacao|chamada)\b/.test(norm)
+  );
+}
+
+function hasListAgendaKeyword(norm: string): boolean {
+  return /\b(o\s+que\s+tenho|quais|mostra|mostrar|lista|listar|pesquisa|pesquisar|busca|buscar|consulta|consultar)\b/.test(
+    norm
+  );
+}
+
+function hasCancelKeyword(norm: string): boolean {
+  return /\b(cancela|cancelar|cancele|desmarca|desmarcar|apaga|apagar|remove|remover)\b/.test(
+    norm
+  );
+}
+
+function hasRescheduleKeyword(norm: string): boolean {
+  return /\b(reagenda|reagendar|remarca|remarcar|move|mover|passa|passar|muda|mudar)\b/.test(
+    norm
   );
 }
 
@@ -88,6 +122,140 @@ function stripNoteNoise(before: string): string {
   s = s.replace(/\b(contato|contacto)\b/gi, ' ');
   s = s.replace(/\s+/g, ' ').trim();
   return stripArticles(s);
+}
+
+function extractContactFromAgendaPhrase(_norm: string, cleaned: string): string {
+  const com = cleaned.match(
+    /\b(?:com|do|da|de|para)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{0,40}?)(?=\s+(?:hoje|amanhã|amanha|segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|domingo|às|as\s+\d|para\s+)|\s*$)/i
+  );
+  if (com?.[1]) return stripArticles(com[1].trim());
+
+  const n = normalizeSpoken(cleaned)
+    .replace(
+      /\b(o\s+que\s+tenho|quais|mostra|mostrar|lista|listar|pesquisa|pesquisar|busca|buscar|cancela|cancelar|desmarca|reagenda|reagendar|remarca|move|mover|passa|muda|agendamento|agendamentos|compromisso|ligacao|chamada|hoje|amanha|esta\s+semana|proximos?|para|com|do|da|de|o|a)\b/g,
+      ' '
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripArticles(n);
+}
+
+function parseListAgendaCommand(
+  cleaned: string,
+  norm: string
+): SecretinaIntent | null {
+  if (!hasListAgendaKeyword(norm) && !/\bo\s+que\s+tenho\b/.test(norm)) {
+    // «pesquisa agendamento Paulo» / «agenda de hoje»
+    if (
+      !/\b(pesquisa|pesquisar|busca|buscar|mostra|o\s+que\s+tenho|quais)\b/.test(
+        norm
+      ) &&
+      !(/\bagenda\b/.test(norm) && /\b(hoje|amanha|semana|segunda|terca|quarta|quinta|sexta)\b/.test(norm))
+    ) {
+      return null;
+    }
+  }
+  // Evitar confundir com criar («agenda com Paulo amanhã às 15»)
+  if (
+    /\b(agenda|agende|agendar|marca|marque|marcar)\b/.test(norm) &&
+    findWhenStartIndex(norm) >= 0 &&
+    /\b(as|a)\s+\d{1,2}\b|\b\d{1,2}\s*(?:horas?|hrs?|h)\b/.test(norm)
+  ) {
+    return null;
+  }
+
+  const contactQuery = extractContactFromAgendaPhrase(norm, cleaned);
+  const whenStart = findWhenStartIndex(norm);
+  const whenRaw =
+    whenStart >= 0 ? cleaned.slice(Math.max(0, whenStart - 0)) : undefined;
+  // Better whenRaw from normalized patterns
+  let whenFromNorm = '';
+  if (/\bhoje\b/.test(norm)) whenFromNorm = 'hoje';
+  else if (/\bdepois\s+de\s+amanha\b/.test(norm)) whenFromNorm = 'depois de amanhã';
+  else if (/\bamanha\b/.test(norm)) whenFromNorm = 'amanhã';
+  else if (/\besta\s+semana\b/.test(norm)) whenFromNorm = 'esta semana';
+  else if (/\bproximos?\b/.test(norm)) whenFromNorm = 'próximos';
+  else {
+    for (const day of [
+      'segunda',
+      'terca',
+      'quarta',
+      'quinta',
+      'sexta',
+      'sabado',
+      'domingo',
+    ]) {
+      if (norm.includes(day)) {
+        whenFromNorm = day;
+        break;
+      }
+    }
+  }
+
+  return {
+    type: 'list_agenda',
+    contactQuery: contactQuery || undefined,
+    whenRaw: whenFromNorm || whenRaw || 'agenda',
+  };
+}
+
+function parseCancelCommand(
+  cleaned: string,
+  norm: string
+): SecretinaIntent | null {
+  if (!hasCancelKeyword(norm)) return null;
+  const contactQuery = extractContactFromAgendaPhrase(norm, cleaned);
+  let whenFromNorm = '';
+  if (/\bhoje\b/.test(norm)) whenFromNorm = 'hoje';
+  else if (/\bamanha\b/.test(norm)) whenFromNorm = 'amanhã';
+  else {
+    for (const day of [
+      'segunda',
+      'terca',
+      'quarta',
+      'quinta',
+      'sexta',
+      'sabado',
+      'domingo',
+    ]) {
+      if (norm.includes(day)) {
+        whenFromNorm = day;
+        break;
+      }
+    }
+  }
+  return {
+    type: 'cancel_schedule',
+    contactQuery: contactQuery || undefined,
+    whenRaw: whenFromNorm || undefined,
+  };
+}
+
+function parseRescheduleCommand(
+  cleaned: string,
+  norm: string
+): SecretinaIntent | null {
+  if (!hasRescheduleKeyword(norm)) return null;
+  const whenStart = findWhenStartIndex(norm);
+  // Precisa de nova hora
+  if (!/\b(as|a)\s+\d{1,2}\b|\b\d{1,2}\s*(?:horas?|hrs?|h|:)\b|\bda\s+(manha|tarde|noite)\b/.test(norm)) {
+    return {
+      type: 'unknown',
+      reason:
+        'Para remarcar diga a nova hora. Ex.: «move o do Paulo para quinta às 10».',
+    };
+  }
+  // whenRaw = from last temporal marker (simplified: full cleaned for parseSpokenDateTime)
+  const para = cleaned.match(
+    /\b(?:para|pra|pro)\s+(.+)$/i
+  );
+  const whenRaw = para?.[1]?.trim() || cleaned;
+  const contactQuery = extractContactFromAgendaPhrase(norm, cleaned);
+  return {
+    type: 'reschedule',
+    contactQuery: contactQuery || undefined,
+    whenRaw,
+  };
 }
 
 /**
@@ -210,7 +378,7 @@ function parseNoteCommand(cleaned: string, norm: string): SecretinaIntent | null
 
 /**
  * Interpreta comando por palavras-chave na frase (não exige formato exacto).
- * Prioridade: agendamento → nota → desconhecido.
+ * Prioridade: listar → cancelar → remarcar → criar agenda → nota.
  */
 export function parseSecretinaCommand(raw: string): SecretinaIntent {
   const cleaned = raw.trim().replace(/\s+/g, ' ');
@@ -220,24 +388,39 @@ export function parseSecretinaCommand(raw: string): SecretinaIntent {
 
   const norm = normalizeSpoken(cleaned);
 
+  const listed = parseListAgendaCommand(cleaned, norm);
+  if (listed) return listed;
+
+  const cancelled = parseCancelCommand(cleaned, norm);
+  if (cancelled) return cancelled;
+
+  const moved = parseRescheduleCommand(cleaned, norm);
+  if (moved) return moved;
+
   const schedule = parseScheduleCommand(cleaned, norm);
   if (schedule) return schedule;
 
   const note = parseNoteCommand(cleaned, norm);
   if (note) return note;
 
-  if (hasScheduleKeyword(norm) || hasNoteKeyword(norm)) {
+  if (
+    hasScheduleKeyword(norm) ||
+    hasNoteKeyword(norm) ||
+    hasListAgendaKeyword(norm) ||
+    hasCancelKeyword(norm) ||
+    hasRescheduleKeyword(norm)
+  ) {
     return {
       type: 'unknown',
       reason:
-        'Entendi a intenção, mas faltam dados. Para agenda diga o nome e a hora; para nota diga o contacto e o texto.',
+        'Entendi a intenção, mas faltam dados. Ex.: «o que tenho amanhã», «cancela o com a Maria», «agenda com Paulo amanhã às 15».',
     };
   }
 
   return {
     type: 'unknown',
     reason:
-      'Não entendi. Mencione «agenda» ou «nota» na frase. Ex.: «agenda com Maria amanhã às 15» ou «nota para o Paulo dizendo que…».',
+      'Não entendi. Pode perguntar a agenda («o que tenho hoje»), cancelar, remarcar, criar agenda ou nota.',
   };
 }
 

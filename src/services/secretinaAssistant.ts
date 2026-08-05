@@ -7,9 +7,18 @@ import {
 } from '@/db/repositories/scheduledCalls';
 import {
   interpretCommandWithOpenAi,
-  type AiActionNote,
+  type AiAction,
+  type AiActionReschedule,
   type AiActionSchedule,
 } from '@/services/openaiInterpret';
+import {
+  cancelScheduleVoice,
+  findScheduleCandidates,
+  listAgendaVoice,
+  rescheduleVoice,
+  speakAmbiguousSchedules,
+  type AgendaVoiceItem,
+} from '@/services/secretinaAgendaVoice';
 import { scheduleCallReminders } from '@/services/notifications';
 import { createId } from '@/utils/id';
 import { formatDateTime } from '@/utils/date';
@@ -26,21 +35,22 @@ import type { Contact } from '@/types';
 
 export type AssistantSuccess = {
   ok: true;
-  contact: Contact;
+  contact?: Contact;
   noteId?: string;
   scheduledId?: string;
   noteBody?: string;
   scheduledAt?: number;
-  kind: 'note' | 'schedule' | 'mixed';
+  kind: 'note' | 'schedule' | 'mixed' | 'list' | 'cancel' | 'reschedule';
   spokenText: string;
   message: string;
+  askScheduleNote?: boolean;
+  agendaItems?: AgendaVoiceItem[];
 };
 
 export type AssistantFailure = {
   ok: false;
   spokenText: string;
   message: string;
-  /** Texto curto/enumerado para TTS. */
   speakMessage?: string;
   ambiguous?: Contact[];
   pendingText?: string;
@@ -153,7 +163,9 @@ async function createScheduleAction(
   return { scheduledId, scheduledAt: atMs };
 }
 
-function resolveWhenMs(action: AiActionSchedule): number | null {
+function resolveWhenMs(
+  action: Pick<AiActionSchedule | AiActionReschedule, 'whenIso' | 'whenRaw'>
+): number | null {
   if (action.whenIso) {
     const t = Date.parse(action.whenIso);
     if (!Number.isNaN(t)) return t;
@@ -165,12 +177,146 @@ function resolveWhenMs(action: AiActionSchedule): number | null {
   return null;
 }
 
+async function runListAgenda(
+  spokenText: string,
+  action: Extract<AiAction, { type: 'list_agenda' }>,
+  reply: string
+): Promise<AssistantResult> {
+  const listed = await listAgendaVoice({
+    whenRaw: action.whenRaw || spokenText,
+    contactQuery: action.contactQuery,
+    searchText: action.searchText || spokenText,
+  });
+  return {
+    ok: true,
+    kind: 'list',
+    spokenText,
+    message: reply.trim() || listed.message,
+    agendaItems: listed.items,
+  };
+}
+
+async function runCancelSchedule(
+  spokenText: string,
+  action: Extract<AiAction, { type: 'cancel_schedule' }>,
+  reply: string
+): Promise<AssistantResult> {
+  const candidates = await findScheduleCandidates({
+    contactQuery: action.contactQuery,
+    whenRaw: action.whenRaw,
+  });
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      spokenText,
+      message:
+        'Não encontrei esse agendamento. Diga o nome e o dia, por exemplo «cancela o com a Maria amanhã».',
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      spokenText,
+      message: speakAmbiguousSchedules(candidates),
+      speakMessage: speakAmbiguousSchedules(candidates),
+    };
+  }
+  const msg = await cancelScheduleVoice(candidates[0]);
+  return {
+    ok: true,
+    kind: 'cancel',
+    contact: {
+      id: candidates[0].contact_id,
+      name: candidates[0].contact_name,
+      phone_normalized: candidates[0].phone_normalized,
+      created_at: 0,
+    },
+    scheduledId: candidates[0].id,
+    spokenText,
+    message: reply.trim() || msg,
+  };
+}
+
+async function runReschedule(
+  spokenText: string,
+  action: AiActionReschedule,
+  reply: string
+): Promise<AssistantResult> {
+  const newAt = resolveWhenMs(action);
+  if (newAt == null) {
+    return {
+      ok: false,
+      spokenText,
+      message:
+        'Para remarcar diga a nova data e hora. Ex.: «move o do Paulo para quinta às 10».',
+    };
+  }
+  if (newAt < Date.now() + 60_000) {
+    return {
+      ok: false,
+      spokenText,
+      message: 'A nova data/hora ficou no passado. Diga um horário futuro.',
+    };
+  }
+
+  const candidates = await findScheduleCandidates({
+    contactQuery: action.contactQuery,
+    whenRaw: action.fromWhenRaw,
+  });
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      spokenText,
+      message:
+        'Não encontrei o agendamento para remarcar. Diga o contacto e, se puder, o dia actual.',
+    };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      spokenText,
+      message: speakAmbiguousSchedules(candidates),
+      speakMessage: speakAmbiguousSchedules(candidates),
+    };
+  }
+
+  const msg = await rescheduleVoice(candidates[0], newAt);
+  return {
+    ok: true,
+    kind: 'reschedule',
+    contact: {
+      id: candidates[0].contact_id,
+      name: candidates[0].contact_name,
+      phone_normalized: candidates[0].phone_normalized,
+      created_at: 0,
+    },
+    scheduledId: candidates[0].id,
+    scheduledAt: newAt,
+    spokenText,
+    message: reply.trim() || msg,
+  };
+}
+
 async function runAiActions(
   spokenText: string,
-  actions: Array<AiActionNote | AiActionSchedule>,
+  actions: AiAction[],
   reply: string,
   options?: RunCommandOptions
 ): Promise<AssistantResult> {
+  // Acções de agenda rica: uma de cada vez (prioridade)
+  const list = actions.find((a) => a.type === 'list_agenda');
+  if (list && list.type === 'list_agenda') {
+    return runListAgenda(spokenText, list, reply);
+  }
+  const cancel = actions.find((a) => a.type === 'cancel_schedule');
+  if (cancel && cancel.type === 'cancel_schedule') {
+    return runCancelSchedule(spokenText, cancel, reply);
+  }
+  const move = actions.find((a) => a.type === 'reschedule');
+  if (move && move.type === 'reschedule') {
+    return runReschedule(spokenText, move, reply);
+  }
+
   const contacts = await listContacts();
   const messages: string[] = [];
   let lastContact: Contact | null = null;
@@ -182,6 +328,8 @@ async function runAiActions(
   let didSchedule = false;
 
   for (const action of actions) {
+    if (action.type !== 'note' && action.type !== 'schedule') continue;
+
     const resolved = resolveContact(
       action.contactQuery,
       contacts,
@@ -227,11 +375,8 @@ async function runAiActions(
           message: 'A data/hora ficou no passado. Diga um horário futuro.',
         };
       }
-      const created = await createScheduleAction(
-        contact,
-        atMs,
-        action.note ?? ''
-      );
+      const scheduleNote = (action.note ?? '').trim();
+      const created = await createScheduleAction(contact, atMs, scheduleNote);
       scheduledId = created.scheduledId;
       scheduledAt = created.scheduledAt;
       didSchedule = true;
@@ -257,11 +402,12 @@ async function runAiActions(
     kind,
     contact: lastContact,
     noteId,
-    noteBody,
+    noteBody: didNote ? noteBody : undefined,
     scheduledId,
     scheduledAt,
     spokenText,
     message: reply.trim() || messages.join('. ') + '.',
+    askScheduleNote: kind === 'schedule',
   };
 }
 
@@ -314,6 +460,44 @@ export async function runSecretinaVoiceCommand(
       spokenText: trimmed,
       message: parsed.reason,
     };
+  }
+
+  if (parsed.type === 'list_agenda') {
+    return runListAgenda(
+      trimmed,
+      {
+        type: 'list_agenda',
+        contactQuery: parsed.contactQuery,
+        whenRaw: parsed.whenRaw,
+        searchText: trimmed,
+      },
+      ''
+    );
+  }
+
+  if (parsed.type === 'cancel_schedule') {
+    return runCancelSchedule(
+      trimmed,
+      {
+        type: 'cancel_schedule',
+        contactQuery: parsed.contactQuery,
+        whenRaw: parsed.whenRaw,
+      },
+      ''
+    );
+  }
+
+  if (parsed.type === 'reschedule') {
+    return runReschedule(
+      trimmed,
+      {
+        type: 'reschedule',
+        contactQuery: parsed.contactQuery,
+        fromWhenRaw: parsed.fromWhenRaw,
+        whenRaw: parsed.whenRaw,
+      },
+      ''
+    );
   }
 
   const contacts = await listContacts();
@@ -380,6 +564,7 @@ export async function runSecretinaVoiceCommand(
     scheduledAt: created.scheduledAt,
     spokenText: trimmed,
     message: `Agendei ligação com ${contact.name} para ${formatDateTime(atMs)}.`,
+    askScheduleNote: true,
   };
 }
 

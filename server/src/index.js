@@ -223,7 +223,7 @@ async function synthesizeSpeech(text, voice, gender) {
 
 function buildInterpretSystemPrompt(nowIso, nowLabel, contactNames) {
   return `És a assistente SeCretina de um CRM de ligações em português (pt-BR/pt-PT).
-Extrai acções a partir do que o utilizador disse. Pode haver VÁRIAS acções no mesmo pedido (nota + agendamento).
+Extrai acções a partir do que o utilizador disse. Pode haver VÁRIAS acções no mesmo pedido.
 
 Data/hora actual: ${nowIso} (${nowLabel})
 Fuso: use a data/hora local implícita do utilizador; quandoIso em ISO 8601 com offset local se possível, senão UTC.
@@ -235,20 +235,24 @@ Responde APENAS JSON válido com este formato:
 {
   "actions": [
     { "type": "note", "contactQuery": "Nome", "noteBody": "texto da nota" },
-    { "type": "schedule", "contactQuery": "Nome", "whenIso": "2026-08-01T15:00:00", "whenRaw": "amanhã às 15", "note": "opcional" }
+    { "type": "schedule", "contactQuery": "Nome", "whenIso": "2026-08-01T15:00:00", "whenRaw": "amanhã às 15", "note": "opcional" },
+    { "type": "list_agenda", "contactQuery": "opcional", "whenRaw": "hoje|amanhã|segunda|esta semana|próximos", "searchText": "opcional" },
+    { "type": "cancel_schedule", "contactQuery": "Nome", "whenRaw": "opcional amanhã/hoje" },
+    { "type": "reschedule", "contactQuery": "Nome", "fromWhenRaw": "opcional", "whenIso": "…", "whenRaw": "quinta às 10" }
   ],
   "reply": "frase curta para dizer em voz alta ao utilizador",
   "clarification": "se faltar info crítica, pergunta aqui; senão omita ou null"
 }
 
 Regras:
-- Se pedir só nota → uma action note.
-- Se pedir só agenda/ligar/marcar → uma action schedule.
-- Se pedir ambos → as duas.
-- contactQuery = nome como dito (pode ser nome+sobrenome).
-- Nota: noteBody obrigatório se type=note.
-- Agenda: whenIso ou whenRaw obrigatório; horário futuro.
-- Se não for pedido de nota/agenda, actions=[] e clarification com ajuda.
+- Criar nota → type note (noteBody obrigatório).
+- Criar agendamento novo → type schedule (whenIso ou whenRaw; horário futuro).
+- Consultar/pesquisar agenda («o que tenho», «mostra», «quais», «pesquisa») → type list_agenda (não inventes itens; o app lista).
+- Cancelar/desmarcar → type cancel_schedule.
+- Mover/remarcar/reagendar existente → type reschedule (nova data em whenIso/whenRaw).
+- contactQuery = nome como dito.
+- Se pedir criar agenda E nota → schedule + note.
+- Se não for nota/agenda, actions=[] e clarification com ajuda.
 - Sem markdown, só JSON.`;
 }
 
@@ -395,7 +399,13 @@ app.post('/api/secretina/interpret', async (req, res) => {
 
     const actions = Array.isArray(parsed?.actions)
       ? parsed.actions.filter(
-          (a) => a && (a.type === 'note' || a.type === 'schedule')
+          (a) =>
+            a &&
+            (a.type === 'note' ||
+              a.type === 'schedule' ||
+              a.type === 'list_agenda' ||
+              a.type === 'cancel_schedule' ||
+              a.type === 'reschedule')
         )
       : [];
 

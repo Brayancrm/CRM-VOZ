@@ -14,15 +14,49 @@ export type AiActionNote = {
 export type AiActionSchedule = {
   type: 'schedule';
   contactQuery: string;
-  /** ISO 8601 preferencial */
   whenIso?: string;
-  /** Frase em português se ISO falhar */
   whenRaw?: string;
   note?: string;
 };
 
+export type AiActionListAgenda = {
+  type: 'list_agenda';
+  contactQuery?: string;
+  whenRaw?: string;
+  searchText?: string;
+};
+
+export type AiActionCancelSchedule = {
+  type: 'cancel_schedule';
+  contactQuery?: string;
+  whenRaw?: string;
+};
+
+export type AiActionReschedule = {
+  type: 'reschedule';
+  contactQuery?: string;
+  fromWhenRaw?: string;
+  whenIso?: string;
+  whenRaw?: string;
+};
+
+export type AiAction =
+  | AiActionNote
+  | AiActionSchedule
+  | AiActionListAgenda
+  | AiActionCancelSchedule
+  | AiActionReschedule;
+
+const ACTION_TYPES = new Set([
+  'note',
+  'schedule',
+  'list_agenda',
+  'cancel_schedule',
+  'reschedule',
+]);
+
 export type AiInterpretedCommand = {
-  actions: Array<AiActionNote | AiActionSchedule>;
+  actions: AiAction[];
   reply: string;
   clarification?: string;
 };
@@ -75,7 +109,8 @@ export async function interpretCommandWithOpenAi(
     if (!parsed || !Array.isArray(parsed.actions)) return null;
     return {
       actions: parsed.actions.filter(
-        (a) => a && (a.type === 'note' || a.type === 'schedule')
+        (a): a is AiAction =>
+          !!a && typeof a === 'object' && ACTION_TYPES.has((a as AiAction).type)
       ),
       reply: typeof parsed.reply === 'string' ? parsed.reply : '',
       clarification:

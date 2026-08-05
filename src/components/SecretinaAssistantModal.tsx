@@ -35,15 +35,23 @@ import { formatPhoneDisplay } from '@/utils/phone';
 import { matchContactBySpokenName } from '@/utils/secretinaCommand';
 import { normalizeSpoken } from '@/utils/normalizeSpoken';
 import { parseSpokenChoiceIndex } from '@/utils/contactChoice';
+import { isSpokenNo, isSpokenYes } from '@/utils/spokenYesNo';
+import { formatDateTime } from '@/utils/date';
 import type { Contact } from '@/types';
 
 type Phase = 'idle' | 'speaking' | 'listening' | 'processing' | 'done' | 'error';
-type ListenMode = 'command' | 'pick_contact';
+type ListenMode =
+  | 'command'
+  | 'pick_contact'
+  | 'ask_schedule_note'
+  | 'dictate_schedule_note';
 
 /** Silêncio antes de considerar o comando completo (pausas naturais). */
 const COMMAND_SILENCE_MS = 3800;
 /** Na escolha de contacto, espera um pouco mais pela resposta. */
 const PICK_SILENCE_MS = 4500;
+/** Sim/não — resposta curta. */
+const YES_NO_SILENCE_MS = 2800;
 
 type Props = {
   visible: boolean;
@@ -78,6 +86,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
   const ambiguousRef = useRef<Contact[]>([]);
   const pendingTextRef = useRef('');
   const speakingLockRef = useRef(false);
+  const resultRef = useRef<AssistantResult | null>(null);
+  /** Incrementa em cada reset/início — anula TTS/processamento antigo. */
+  const sessionGenRef = useRef(0);
 
   const setPhaseSafe = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -91,27 +102,56 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     }
   };
 
-  /** Fala e só resolve no fim — mic nunca a meio do TTS. */
+  /** Fala e só resolve no fim — mic nunca a meio do TTS. Nunca trava >18s. */
   const speakThen = useCallback(async (text: string): Promise<boolean> => {
+    const gen = sessionGenRef.current;
     speakingLockRef.current = true;
     abortSpeechRecognition();
     setPhaseSafe('speaking');
     setLiveTranscript(text);
     try {
-      let result = await speakText(text);
-      if (!result.heard) {
-        // Segunda tentativa (rede / motor de voz)
-        await new Promise((r) => setTimeout(r, 400));
-        result = await speakText(text);
+      const heard = await Promise.race([
+        speakText(text).then((r) => r.heard),
+        new Promise<boolean>((resolve) => {
+          setTimeout(() => resolve(false), 18_000);
+        }),
+      ]);
+      if (gen !== sessionGenRef.current) return false;
+      if (!heard) {
+        // Segunda tentativa rápida (rede / motor de voz)
+        await new Promise((r) => setTimeout(r, 300));
+        if (gen !== sessionGenRef.current) return false;
+        const again = await Promise.race([
+          speakText(text).then((r) => r.heard),
+          new Promise<boolean>((resolve) => {
+            setTimeout(() => resolve(false), 12_000);
+          }),
+        ]);
+        return gen === sessionGenRef.current ? again : false;
       }
-      return result.heard;
+      return true;
     } catch (e) {
       console.warn('SeCretina TTS', e);
       return false;
     } finally {
-      speakingLockRef.current = false;
+      if (gen === sessionGenRef.current) {
+        speakingLockRef.current = false;
+      }
     }
   }, [setPhaseSafe]);
+
+  const unlockSession = useCallback(async () => {
+    sessionGenRef.current += 1;
+    speakingLockRef.current = false;
+    processingRef.current = false;
+    clearSilenceTimer();
+    abortSpeechRecognition();
+    try {
+      await stopSpeaking();
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const styles = useThemedStyles((c) =>
     StyleSheet.create({
@@ -188,16 +228,13 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
   );
 
   const reset = useCallback(() => {
-    clearSilenceTimer();
-    void stopSpeaking();
-    processingRef.current = false;
+    void unlockSession();
     autoStartedRef.current = false;
     liveTranscriptRef.current = '';
     listenModeRef.current = 'command';
     ambiguousRef.current = [];
     pendingTextRef.current = '';
-    speakingLockRef.current = false;
-    abortSpeechRecognition();
+    resultRef.current = null;
     setMicBusy(false);
     setPhaseSafe('idle');
     setLiveTranscript('');
@@ -207,7 +244,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     setAmbiguous([]);
     setPendingText('');
     setScheduleNotePreview('');
-  }, [setPhaseSafe, setMicBusy]);
+  }, [setPhaseSafe, setMicBusy, unlockSession]);
 
   useEffect(() => {
     if (!visible) {
@@ -222,18 +259,25 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       abortSpeechRecognition();
       setMicBusy(true);
       setPhaseSafe('listening');
-      setLiveTranscript(
+      const hint =
         mode === 'pick_contact'
           ? 'Pode dizer o contacto…'
-          : 'Microfone activo — fale agora'
-      );
+          : mode === 'ask_schedule_note'
+            ? 'Diga sim ou não…'
+            : mode === 'dictate_schedule_note'
+              ? 'Microfone activo — dite a nota'
+              : 'Microfone activo — fale agora';
+      setLiveTranscript(hint);
       liveTranscriptRef.current = '';
       await prepareMicForRecognition();
       await new Promise((r) => setTimeout(r, 300));
       if (phaseRef.current !== 'listening' || speakingLockRef.current) return;
       startedAtRef.current = Date.now();
       try {
-        startCommandRecognition({ longUtterance: true });
+        startCommandRecognition({
+          longUtterance:
+            mode === 'command' || mode === 'dictate_schedule_note',
+        });
       } catch (e) {
         setMicBusy(false);
         setPhaseSafe('error');
@@ -247,7 +291,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
 
   const applyOutcome = useCallback(
     async (outcome: AssistantResult) => {
+      const gen = sessionGenRef.current;
       setResult(outcome);
+      resultRef.current = outcome;
       if (outcome.ok) {
         setAmbiguous([]);
         ambiguousRef.current = [];
@@ -255,9 +301,32 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         pendingTextRef.current = '';
         listenModeRef.current = 'command';
         setMicBusy(false);
+
+        const shouldAskNote =
+          outcome.kind === 'schedule' && Boolean(outcome.scheduledId);
+
+        if (shouldAskNote) {
+          const withAsk = { ...outcome, askScheduleNote: true };
+          setResult(withAsk);
+          resultRef.current = withAsk;
+          setPhaseSafe('done');
+          await speakThen(outcome.message);
+          if (gen !== sessionGenRef.current) return;
+          await speakThen(
+            'Quer acrescentar uma nota a este agendamento? Diga sim ou não.'
+          );
+          if (gen !== sessionGenRef.current) return;
+          await new Promise((r) => setTimeout(r, 400));
+          if (gen !== sessionGenRef.current) return;
+          await openMicForMode('ask_schedule_note');
+          return;
+        }
+
         setPhaseSafe('done');
         await speakThen(outcome.message);
+        if (gen !== sessionGenRef.current) return;
         setPhaseSafe('done');
+        setMicBusy(false);
         return;
       }
 
@@ -274,20 +343,24 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
           outcome.message.split('\n')[0] ||
           outcome.message;
         await speakThen(toSpeak);
+        if (gen !== sessionGenRef.current) return;
         await openMicForMode('pick_contact');
         return;
       }
 
+      // Erro recuperável (sem nome, sem data, etc.): fala e reabre o mic
       setAmbiguous([]);
       ambiguousRef.current = [];
       setPendingText('');
       pendingTextRef.current = '';
       listenModeRef.current = 'command';
-      setMicBusy(false);
       setPhaseSafe('error');
       setErrorMsg(outcome.message);
       await speakThen(outcome.message);
-      setPhaseSafe('error');
+      if (gen !== sessionGenRef.current) return;
+      await new Promise((r) => setTimeout(r, 350));
+      if (gen !== sessionGenRef.current) return;
+      await openMicForMode('command');
     },
     [setPhaseSafe, setMicBusy, speakThen, openMicForMode]
   );
@@ -328,6 +401,104 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       const trimmed = text.trim();
       if (!trimmed || processingRef.current) return;
       if (speakingLockRef.current) return;
+
+      // Sim/não após agendamento
+      if (listenModeRef.current === 'ask_schedule_note' && !contactId) {
+        processingRef.current = true;
+        clearSilenceTimer();
+        abortSpeechRecognition();
+        setLiveTranscript(trimmed);
+        liveTranscriptRef.current = trimmed;
+        try {
+          if (isSpokenYes(trimmed)) {
+            setPhaseSafe('speaking');
+            setLiveTranscript('Pode falar…');
+            const heard = await speakThen('Pode falar.');
+            if (!heard) {
+              setMicBusy(false);
+              setPhaseSafe('error');
+              setErrorMsg(
+                'Não consegui falar «Pode falar». Tente de novo ou use o botão da nota.'
+              );
+              return;
+            }
+            await new Promise((r) => setTimeout(r, 500));
+            await openMicForMode('dictate_schedule_note');
+            return;
+          }
+          if (isSpokenNo(trimmed)) {
+            const r = resultRef.current;
+            const when =
+              r?.ok && r.scheduledAt != null
+                ? formatDateTime(r.scheduledAt)
+                : '';
+            const name =
+              r?.ok && r.contact?.name ? r.contact.name : 'o contacto';
+            const bye = when
+              ? `Combinado. A ligação com ${name} fica para ${when}. Até logo.`
+              : `Combinado. Agendamento guardado. Até logo.`;
+            setMicBusy(false);
+            setPhaseSafe('done');
+            listenModeRef.current = 'command';
+            await speakThen(bye);
+            setPhaseSafe('done');
+            return;
+          }
+          await speakThen('Não entendi. Diga sim ou não.');
+          await openMicForMode('ask_schedule_note');
+        } finally {
+          processingRef.current = false;
+        }
+        return;
+      }
+
+      // Ditado da nota do agendamento
+      if (listenModeRef.current === 'dictate_schedule_note' && !contactId) {
+        processingRef.current = true;
+        clearSilenceTimer();
+        abortSpeechRecognition();
+        setPhaseSafe('processing');
+        setLiveTranscript(trimmed);
+        liveTranscriptRef.current = trimmed;
+        try {
+          const current = resultRef.current;
+          const scheduledId =
+            current?.ok && current.kind === 'schedule'
+              ? current.scheduledId
+              : undefined;
+          if (!scheduledId) {
+            setMicBusy(false);
+            setPhaseSafe('error');
+            setErrorMsg('Agendamento não encontrado para guardar a nota.');
+            await speakThen('Não encontrei o agendamento para guardar a nota.');
+            return;
+          }
+          const saved = await updateScheduledCallNote(scheduledId, trimmed);
+          if (!saved.ok) {
+            setMicBusy(false);
+            setPhaseSafe('error');
+            setErrorMsg(saved.message);
+            await speakThen(saved.message);
+            return;
+          }
+          setScheduleNotePreview(trimmed);
+          const next =
+            current?.ok
+              ? { ...current, askScheduleNote: false, noteBody: trimmed }
+              : current;
+          setResult(next);
+          resultRef.current = next;
+          setMicBusy(false);
+          listenModeRef.current = 'command';
+          setPhaseSafe('done');
+          await speakThen('Nota do agendamento guardada. Até logo.');
+          setPhaseSafe('done');
+        } finally {
+          processingRef.current = false;
+        }
+        return;
+      }
+
       if (
         !contactId &&
         listenModeRef.current === 'command' &&
@@ -363,16 +534,37 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         ambiguousRef.current = [];
       }
 
-      const commandText =
-        contactId && pendingTextRef.current.trim()
-          ? pendingTextRef.current.trim()
-          : trimmed;
-      const outcome = await runSecretinaVoiceCommand(
-        commandText,
-        contactId ? { contactId } : undefined
-      );
-      await applyOutcome(outcome);
-      processingRef.current = false;
+      try {
+        const commandText =
+          contactId && pendingTextRef.current.trim()
+            ? pendingTextRef.current.trim()
+            : trimmed;
+        const outcome = await runSecretinaVoiceCommand(
+          commandText,
+          contactId ? { contactId } : undefined
+        );
+        await applyOutcome(outcome);
+      } catch (e) {
+        console.warn('SeCretina processCommand', e);
+        speakingLockRef.current = false;
+        setMicBusy(false);
+        setPhaseSafe('error');
+        setErrorMsg(
+          e instanceof Error
+            ? e.message
+            : 'Falha ao processar. Toque em Falar agora.'
+        );
+        try {
+          await speakThen(
+            'Tive um problema a processar. Pode repetir o pedido?'
+          );
+          await openMicForMode('command');
+        } catch {
+          setMicBusy(false);
+        }
+      } finally {
+        processingRef.current = false;
+      }
     },
     [
       setPhaseSafe,
@@ -380,6 +572,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       resolvePickContact,
       speakThen,
       openMicForMode,
+      setMicBusy,
     ]
   );
 
@@ -397,7 +590,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       const delay =
         listenModeRef.current === 'pick_contact'
           ? PICK_SILENCE_MS
-          : COMMAND_SILENCE_MS;
+          : listenModeRef.current === 'ask_schedule_note'
+            ? YES_NO_SILENCE_MS
+            : COMMAND_SILENCE_MS;
       silenceTimerRef.current = setTimeout(() => {
         if (
           phaseRef.current === 'listening' &&
@@ -461,6 +656,22 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       return;
     }
 
+    if (listenModeRef.current === 'ask_schedule_note') {
+      void (async () => {
+        await speakThen('Diga sim ou não.');
+        await openMicForMode('ask_schedule_note');
+      })();
+      return;
+    }
+
+    if (listenModeRef.current === 'dictate_schedule_note') {
+      void (async () => {
+        await speakThen('Pode falar.');
+        await openMicForMode('dictate_schedule_note');
+      })();
+      return;
+    }
+
     clearSilenceTimer();
     setMicBusy(false);
     setPhaseSafe('error');
@@ -483,8 +694,10 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       return;
     }
 
-    clearSilenceTimer();
+    // Liberta qualquer TTS/mic/processamento preso de tentativas anteriores
+    await unlockSession();
     setResult(null);
+    resultRef.current = null;
     setErrorMsg('');
     setAmbiguous([]);
     ambiguousRef.current = [];
@@ -494,12 +707,10 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     setLiveTranscript('');
     liveTranscriptRef.current = '';
     listenModeRef.current = 'command';
-    // Não chamar stopSpeaking aqui de forma agressiva antes do greet —
-    // só abortar o reconhecimento do wake.
-    abortSpeechRecognition();
 
     const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!perm.granted) {
+      setMicBusy(false);
       setPhaseSafe('error');
       setErrorMsg(
         'Permita microfone e reconhecimento de voz nas definições do SeCretina.'
@@ -515,14 +726,12 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       setLiveTranscript('Pode falar…');
       const heard = await speakThen('Pode falar.');
       if (!heard) {
-        setMicBusy(false);
-        setPhaseSafe('error');
-        setErrorMsg(
-          'Não consegui falar «Pode falar». Verifique a internet e tente de novo com «Falar agora».'
-        );
+        // Fallback: abre o mic na mesma — não deixa o assistente morto
+        setLiveTranscript('Microfone activo — fale agora');
+        await new Promise((r) => setTimeout(r, 300));
+        await openMicForMode('command');
         return;
       }
-      // Pausa extra: Samsung precisa libertar o TTS antes do mic
       await new Promise((r) => setTimeout(r, 500));
     }
 
@@ -581,7 +790,14 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       return;
     }
     setScheduleNotePreview(text.trim());
-    void speakText('Nota do agendamento guardada.');
+    const next = {
+      ...result,
+      askScheduleNote: false,
+      noteBody: text.trim(),
+    };
+    setResult(next);
+    resultRef.current = next;
+    void speakText('Nota do agendamento guardada. Até logo.');
   };
 
   return (
@@ -603,10 +819,10 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             <Text style={styles.title}>Falar com SeCretina</Text>
             {ambiguous.length === 0 ? (
               <Text style={styles.subtitle}>
-                Diga «Olá {wakeName}» ou use o botão. Com o servidor Railway,
-                a assistente interpreta nota e agenda no mesmo pedido.
+                Diga «Olá {wakeName}» ou use o botão.
                 {'\n'}
-                Ex.: «agenda com Paulo amanhã às 15 e anota que é proposta»
+                Ex.: «o que tenho amanhã», «cancela o com a Maria», «move o do
+                Paulo para quinta às 10», «agenda com Ana amanhã às 15»
               </Text>
             ) : null}
 
@@ -620,7 +836,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                   ? liveTranscript
                   : listenModeRef.current === 'pick_contact'
                     ? 'Microfone activo — diga o número ou o sobrenome'
-                    : 'Microfone activo — fale agora o comando'}
+                    : listenModeRef.current === 'ask_schedule_note'
+                      ? 'Microfone activo — diga sim ou não'
+                      : listenModeRef.current === 'dictate_schedule_note'
+                        ? 'Microfone activo — dite a nota do agendamento'
+                        : 'Microfone activo — fale agora o comando'}
               </Text>
             ) : null}
 
@@ -638,48 +858,72 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                     <Text style={styles.notePreview}>{result.noteBody}</Text>
                   </>
                 ) : null}
+                {result.kind === 'list' && result.agendaItems?.length ? (
+                  <View style={styles.pickList}>
+                    {result.agendaItems.slice(0, 8).map((item, i) => (
+                      <View key={item.id} style={styles.pickRow}>
+                        <Text style={styles.pickText}>
+                          {i + 1}. {item.contactName}
+                        </Text>
+                        <Text style={styles.pickHint}>
+                          {formatDateTime(item.scheduledAt)}
+                          {item.note ? ` · ${item.note}` : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
                 {result.kind === 'schedule' || result.kind === 'mixed' ? (
                   <>
                     <Text style={styles.notePreview}>
                       Guardado na Agenda do app.
                     </Text>
-                    {result.kind === 'schedule' && !result.noteBody ? (
-                      scheduleNotePreview ? (
-                        <>
-                          <Text style={styles.label}>Nota do agendamento</Text>
-                          <Text style={styles.notePreview}>
-                            {scheduleNotePreview}
+                    {result.kind === 'schedule' && scheduleNotePreview ? (
+                      <>
+                        <Text style={styles.label}>Nota do agendamento</Text>
+                        <Text style={styles.notePreview}>
+                          {scheduleNotePreview}
+                        </Text>
+                      </>
+                    ) : result.kind === 'schedule' ? (
+                      <>
+                        <Text style={styles.label}>
+                          Quer acrescentar uma nota a este agendamento?
+                        </Text>
+                        {listenModeRef.current === 'ask_schedule_note' ? (
+                          <Text style={styles.listening}>
+                            Diga sim ou não…
                           </Text>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.label}>
-                            Quer acrescentar uma nota a este agendamento?
-                          </Text>
-                          <DictateNoteButton
-                            title="Falar nota do agendamento"
-                            onTranscript={(t) => void onScheduleNoteDictated(t)}
-                          />
-                        </>
-                      )
+                        ) : null}
+                        <DictateNoteButton
+                          title="Falar nota do agendamento"
+                          onTranscript={(t) => void onScheduleNoteDictated(t)}
+                        />
+                      </>
                     ) : null}
-                    <Button
-                      title="Ver agenda"
-                      onPress={() => {
-                        handleClose();
-                        router.push('/(tabs)/agenda');
-                      }}
-                    />
                   </>
-                ) : (
+                ) : null}
+                {result.kind === 'list' ||
+                result.kind === 'schedule' ||
+                result.kind === 'mixed' ||
+                result.kind === 'cancel' ||
+                result.kind === 'reschedule' ? (
+                  <Button
+                    title="Ver agenda"
+                    onPress={() => {
+                      handleClose();
+                      router.push('/(tabs)/agenda');
+                    }}
+                  />
+                ) : result.contact?.id ? (
                   <Button
                     title={`Abrir ${result.contact.name}`}
                     onPress={() => {
                       handleClose();
-                      router.push(`/contact/${result.contact.id}`);
+                      router.push(`/contact/${result.contact!.id}`);
                     }}
                   />
-                )}
+                ) : null}
               </>
             ) : null}
 
