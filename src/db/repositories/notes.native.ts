@@ -46,6 +46,18 @@ export async function updateNote(id: string, body: string): Promise<void> {
   await db.runAsync(`UPDATE notes SET body = ? WHERE id = ?`, body.trim(), id);
 }
 
+export async function updateNotesContactForSession(
+  sessionId: string,
+  contactId: string
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE notes SET contact_id = ? WHERE call_session_id = ?`,
+    contactId,
+    sessionId
+  );
+}
+
 export async function getCombinedHistoryText(contactId: string): Promise<string> {
   const notes = await listNotesByContact(contactId);
   if (notes.length === 0) return 'Nenhuma nota registrada para este contato.';

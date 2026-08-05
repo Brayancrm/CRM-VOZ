@@ -159,6 +159,24 @@ export async function webListScheduledInRange(
     });
 }
 
+export async function webListScheduledByContact(
+  contactId: string
+): Promise<ScheduledCallWithContact[]> {
+  return data.scheduled_calls
+    .filter((s) => s.contact_id === contactId)
+    .sort((a, b) => b.scheduled_at - a.scheduled_at)
+    .map((s) => {
+      const c = data.contacts.find((x) => x.id === s.contact_id);
+      return {
+        ...s,
+        note: s.note ?? '',
+        completed: s.completed ?? 0,
+        contact_name: c?.name ?? 'Desconhecido',
+        phone_normalized: c?.phone_normalized ?? '',
+      };
+    });
+}
+
 export async function webCreateScheduledCall(item: ScheduledCall): Promise<void> {
   data.scheduled_calls.push(item);
   persist();

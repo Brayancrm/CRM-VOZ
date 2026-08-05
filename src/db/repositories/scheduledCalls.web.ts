@@ -1,6 +1,7 @@
 import type { ScheduledCall, ScheduledCallWithContact } from '@/types';
 import {
   webListScheduledInRange,
+  webListScheduledByContact,
   webCreateScheduledCall,
   webDeleteScheduledCall,
   webListOverduePending,
@@ -13,6 +14,12 @@ export async function listScheduledInRange(
   end: number
 ): Promise<ScheduledCallWithContact[]> {
   return webListScheduledInRange(start, end);
+}
+
+export async function listScheduledByContact(
+  contactId: string
+): Promise<ScheduledCallWithContact[]> {
+  return webListScheduledByContact(contactId);
 }
 
 export async function listOverduePending(): Promise<ScheduledCallWithContact[]> {

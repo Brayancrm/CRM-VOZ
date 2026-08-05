@@ -8,7 +8,8 @@ export type PhoneCallEvent =
 
 export type CallDetectorCallback = (
   event: PhoneCallEvent,
-  phoneNumber?: string
+  phoneNumber?: string,
+  sessionId?: string
 ) => void;
 
 export type CallDetectorHandle = {

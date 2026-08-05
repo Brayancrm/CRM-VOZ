@@ -37,6 +37,19 @@ export async function createCallSession(
   return session;
 }
 
+export async function updateCallSessionContact(
+  id: string,
+  data: { contact_id: string; phone: string }
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE call_sessions SET contact_id = ?, phone = ? WHERE id = ?`,
+    data.contact_id,
+    data.phone,
+    id
+  );
+}
+
 export async function endCallSession(
   id: string,
   data: {
@@ -113,8 +126,17 @@ export async function listSessionsAwaitingTranscription(): Promise<
   const rows = await db.getAllAsync<Record<string, unknown>>(
     `SELECT * FROM call_sessions
      WHERE audio_uri IS NOT NULL
-       AND transcription_status IN ('pending', 'failed')
+       AND transcription_status IN ('pending', 'failed', 'processing')
      ORDER BY ended_at ASC`
   );
   return rows.map(rowToSession);
+}
+
+/** Sessões presas em "processing" (app fechou no meio do upload) voltam para a fila. */
+export async function resetStaleTranscriptionJobs(): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE call_sessions SET transcription_status = 'pending'
+     WHERE transcription_status = 'processing'`
+  );
 }

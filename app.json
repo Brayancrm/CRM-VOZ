@@ -1,25 +1,26 @@
 {
   "expo": {
-    "name": "CRM-VOZ",
-    "slug": "CRM-VOZ",
+    "name": "SeCretina",
+    "slug": "secretina",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "crmvoz",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "scheme": "secretina",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.crmvoz.app",
+      "bundleIdentifier": "com.koomind.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "O CRM-VOZ grava apenas a sua voz para criar notas durante ou após ligações.",
-        "NSContactsUsageDescription": "Importar e associar contatos às suas notas de voz.",
+        "NSMicrophoneUsageDescription": "O SeCretina usa o microfone para ouvir comandos de voz e notas.",
+        "NSContactsUsageDescription": "Importar e associar contatos às suas notas.",
         "NSCalendarsUsageDescription": "Exibir compromissos do calendário junto com ligações agendadas no app.",
-        "NSSpeechRecognitionUsageDescription": "Transcrever suas notas de voz em texto."
+        "NSSpeechRecognitionUsageDescription": "O SeCretina usa reconhecimento de voz para criar notas por comando falado."
       }
     },
     "android": {
-      "package": "com.crmvoz.app",
+      "package": "com.koomind.app",
+      "label": "SeCretina",
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -34,8 +35,17 @@
         "WRITE_CALENDAR",
         "POST_NOTIFICATIONS",
         "READ_PHONE_STATE",
+        "READ_CALL_LOG",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_MICROPHONE"
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "MODIFY_AUDIO_SETTINGS",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "USE_FULL_SCREEN_INTENT",
+        "BLUETOOTH_CONNECT",
+        "SYSTEM_ALERT_WINDOW",
+        "FOREGROUND_SERVICE_SPECIAL_USE",
+        "RECEIVE_BOOT_COMPLETED"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -43,7 +53,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-dev-client",
       "expo-router",
       "expo-sqlite",
       [
@@ -55,7 +64,7 @@
       [
         "expo-contacts",
         {
-          "contactsPermission": "Permitir acesso aos contatos para importar ao CRM-VOZ."
+          "contactsPermission": "Permitir acesso aos contatos para importar ao SeCretina."
         }
       ],
       [
@@ -67,9 +76,20 @@
       [
         "expo-av",
         {
-          "microphonePermission": "Gravar apenas a sua voz para notas (não grava o interlocutor)."
+          "microphonePermission": "Gravar nota de voz manual (opcional)."
         }
-      ]
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "O SeCretina usa o microfone para ouvir seus comandos de voz.",
+          "speechRecognitionPermission": "O SeCretina usa reconhecimento de voz para criar notas por comando.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ],
+      "./plugins/withAndroidManifestMerge.js",
+      "./plugins/withKoomindCallRecording.js",
+      "./plugins/withKoomindHelper.js"
     ],
     "experiments": {
       "typedRoutes": true

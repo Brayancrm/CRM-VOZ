@@ -15,6 +15,15 @@ export async function createCallSession(
   return webCreateCallSession(session);
 }
 
+export async function updateCallSessionContact(
+  id: string,
+  data: { contact_id: string; phone: string }
+): Promise<void> {
+  const session = await webGetCallSessionById(id);
+  if (!session) return;
+  await webCreateCallSession({ ...session, contact_id: data.contact_id, phone: data.phone });
+}
+
 export async function endCallSession(
   id: string,
   data: {

@@ -53,3 +53,14 @@ export interface ScheduledCallWithContact extends ScheduledCall {
   contact_name: string;
   phone_normalized: string;
 }
+
+export interface DeviceCalendarEvent {
+  id: string;
+  title: string;
+  startAt: number;
+  endAt: number;
+  allDay: boolean;
+  calendarTitle: string;
+  location: string;
+  notes: string;
+}

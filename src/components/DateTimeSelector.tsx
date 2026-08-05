@@ -11,7 +11,7 @@ import {
   getYearOptions,
 } from '@/utils/dateParts';
 import { PickerField } from '@/components/PickerField';
-import { colors } from '@/constants/theme';
+import { useThemedStyles } from '@/hooks/useThemedStyles';
 
 type Props = {
   value: Date;
@@ -32,6 +32,25 @@ export function DateTimeSelector({
   const [year, setYear] = useState(value.getFullYear());
   const [hour, setHour] = useState(value.getHours());
   const [minute, setMinute] = useState(value.getMinutes());
+
+  const styles = useThemedStyles((c) =>
+    StyleSheet.create({
+      block: { gap: 6, marginBottom: 4 },
+      label: { fontSize: 14, fontWeight: '600', color: c.text },
+      preview: { fontSize: 15, color: c.primary, marginBottom: 4 },
+      groupLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: c.textMuted,
+        marginTop: 4,
+      },
+      row: {
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'flex-start',
+      },
+    })
+  );
 
   useEffect(() => {
     setDay(value.getDate());
@@ -156,19 +175,4 @@ export function DateTimeSelector({
   );
 }
 
-const styles = StyleSheet.create({
-  block: { gap: 6, marginBottom: 4 },
-  label: { fontSize: 14, fontWeight: '600', color: colors.text },
-  preview: { fontSize: 15, color: colors.primary, marginBottom: 4 },
-  groupLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginTop: 4,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-start',
-  },
-});
+// styles gerados pelo useThemedStyles (dark mode consistente)

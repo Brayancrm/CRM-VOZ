@@ -10,9 +10,9 @@ import { createContact, findContactByPhone } from '@/db/repositories/contacts';
 import { buildPhoneNormalized } from '@/utils/phone';
 import { DEFAULT_DIAL_CODE } from '@/utils/countryCodes';
 import { createId } from '@/utils/id';
-import { colors } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { ContactForm } from '@/components/ContactForm';
+import { useThemedStyles } from '@/hooks/useThemedStyles';
 
 export default function NewContactScreen() {
   const router = useRouter();
@@ -20,6 +20,13 @@ export default function NewContactScreen() {
   const [dialCode, setDialCode] = useState(DEFAULT_DIAL_CODE);
   const [localPhone, setLocalPhone] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const styles = useThemedStyles((c) =>
+    StyleSheet.create({
+      container: { flex: 1, padding: 16, backgroundColor: c.bg },
+      mt: { marginTop: 8 },
+    })
+  );
 
   const save = async () => {
     const trimmedName = name.trim();
@@ -72,7 +79,4 @@ export default function NewContactScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: colors.bg },
-  mt: { marginTop: 8 },
-});
+// styles gerados pelo useThemedStyles (dark mode consistente)

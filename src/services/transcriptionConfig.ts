@@ -1,28 +1,22 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const KEY_URL = 'crm_voz_transcription_api_url';
-const KEY_SECRET = 'crm_voz_transcription_api_secret';
-
+/**
+ * URL e secret vêm só do build (EXPO_PUBLIC_*), nunca dos Ajustes.
+ * OPENAI_API_KEY fica exclusivamente no Railway.
+ *
+ * Defina no `.env` (ou secrets do EAS) antes de gerar o APK:
+ *   EXPO_PUBLIC_TRANSCRIPTION_API_URL=https://seu-projeto.up.railway.app
+ *   EXPO_PUBLIC_TRANSCRIPTION_API_SECRET=mesmo_valor_de_API_SECRET
+ */
 const envUrl = process.env.EXPO_PUBLIC_TRANSCRIPTION_API_URL?.trim() || '';
 const envSecret = process.env.EXPO_PUBLIC_TRANSCRIPTION_API_SECRET?.trim() || '';
 
 export async function getTranscriptionApiUrl(): Promise<string> {
-  const saved = await AsyncStorage.getItem(KEY_URL);
-  return (saved || envUrl).trim().replace(/\/$/, '');
-}
-
-export async function setTranscriptionApiUrl(url: string): Promise<void> {
-  await AsyncStorage.setItem(KEY_URL, url.trim().replace(/\/$/, ''));
+  return envUrl.replace(/\/$/, '');
 }
 
 export async function getTranscriptionApiSecret(): Promise<string> {
-  const saved = await AsyncStorage.getItem(KEY_SECRET);
-  return (saved || envSecret).trim();
-}
-
-export async function setTranscriptionApiSecret(secret: string): Promise<void> {
-  await AsyncStorage.setItem(KEY_SECRET, secret.trim());
+  return envSecret;
 }
 
 export async function isTranscriptionConfigured(): Promise<boolean> {

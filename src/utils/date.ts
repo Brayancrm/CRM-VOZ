@@ -47,12 +47,12 @@ export function getMonthWindow(now = new Date()): { start: number; end: number }
   return { start: start.getTime(), end: end.getTime() };
 }
 
-/** Hoje 00:00 até +90 dias — padrão da agenda. */
+/** Hoje 00:00 até +2 anos — padrão da agenda («Próximos»). */
 export function getUpcomingWindow(now = new Date()): { start: number; end: number } {
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   const end = new Date(now);
-  end.setDate(end.getDate() + 90);
+  end.setFullYear(end.getFullYear() + 2);
   end.setHours(23, 59, 59, 999);
   return { start: start.getTime(), end: end.getTime() };
 }
@@ -63,6 +63,25 @@ export function getDayWindow(day = new Date()): { start: number; end: number } {
   const end = new Date(day);
   end.setHours(23, 59, 59, 999);
   return { start: start.getTime(), end: end.getTime() };
+}
+
+export function formatEventTime(
+  startAt: number,
+  endAt: number,
+  allDay: boolean
+): string {
+  if (allDay) {
+    const start = formatDate(startAt);
+    const end = formatDate(endAt);
+    return start === end ? `${start} · dia inteiro` : `${start} – ${end} · dia inteiro`;
+  }
+  const start = formatDateTime(startAt);
+  if (endAt - startAt <= 60_000) return start;
+  const end = new Date(endAt).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${start} – ${end}`;
 }
 
 export function describeFilterRange(

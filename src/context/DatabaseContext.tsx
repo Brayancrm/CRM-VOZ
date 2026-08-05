@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { Platform } from 'react-native';
+import { useColors } from '@/context/ThemeContext';
 
 async function initDatabase(): Promise<void> {
   if (Platform.OS === 'web') {
@@ -17,7 +18,6 @@ async function initDatabase(): Promise<void> {
   const { getDatabase } = await import('@/db/database.native');
   await getDatabase();
 }
-import { colors } from '@/constants/theme';
 
 type DatabaseContextValue = {
   ready: boolean;
@@ -27,6 +27,7 @@ const DatabaseContext = createContext<DatabaseContextValue>({ ready: false });
 
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const colors = useColors();
 
   useEffect(() => {
     initDatabase()
@@ -36,7 +37,14 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 
   if (!ready) {
     return (
-      <View style={styles.loader}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: colors.bg,
+        }}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -52,12 +60,3 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 export function useDatabaseReady(): boolean {
   return useContext(DatabaseContext).ready;
 }
-
-const styles = StyleSheet.create({
-  loader: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.bg,
-  },
-});

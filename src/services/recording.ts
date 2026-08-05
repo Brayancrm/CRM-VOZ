@@ -1,4 +1,4 @@
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 
 let recording: Audio.Recording | null = null;
@@ -20,6 +20,11 @@ export async function startMicRecording(sessionId: string): Promise<void> {
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: true,
     playsInSilentModeIOS: true,
+    staysActiveInBackground: true,
+    shouldDuckAndroid: true,
+    playThroughEarpieceAndroid: false,
+    interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+    interruptionModeIOS: InterruptionModeIOS.DoNotMix,
   });
   const { recording: rec } = await Audio.Recording.createAsync(
     Audio.RecordingOptionsPresets.HIGH_QUALITY
@@ -33,9 +38,20 @@ export async function stopMicRecording(): Promise<{
   uri: string;
 } | null> {
   if (!recording || !activeSessionId) return null;
-  await recording.stopAndUnloadAsync();
-  const uri = recording.getURI();
   const sessionId = activeSessionId;
+  try {
+    await recording.stopAndUnloadAsync();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('KooMind: stop gravação Expo', msg);
+    recording = null;
+    activeSessionId = null;
+    if (msg.toLowerCase().includes('recorder does not exist')) {
+      return null;
+    }
+    throw e;
+  }
+  const uri = recording.getURI();
   recording = null;
   activeSessionId = null;
   if (!uri) return null;

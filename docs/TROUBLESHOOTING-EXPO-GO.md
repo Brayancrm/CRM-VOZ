@@ -82,6 +82,39 @@ npx expo start --web -c
 
 ---
 
+## Erro: `AsyncStorage is null` / sumiu aba Ajustes
+
+Este projeto usa **dev build** (APK **CRM-VOZ**), não o Expo Go genérico da loja.
+
+| Errado | Certo |
+|--------|--------|
+| Abrir QR com **Expo Go** | Abrir QR com o app **CRM-VOZ** instalado no celular |
+| APK antigo + código novo | Mesmo APK + Metro atualizado (ou gerar APK de novo) |
+
+### O que fazer
+
+1. No PC, pare o Metro (**Ctrl+C**) e rode:
+
+```powershell
+cd "C:\Users\Dell - Brayan\CRM-VOZ"
+npm install
+npx expo start --dev-client -c
+```
+
+2. No celular, abra o ícone **CRM-VOZ** (não o Expo Go).
+3. Escaneie o QR Code **de dentro** do CRM-VOZ ou toque na URL do projeto.
+
+Se ainda der erro, gere um APK novo (inclui módulos nativos atuais):
+
+```powershell
+npx expo prebuild --platform android
+npm run build:apk
+```
+
+Copie `android\app\build\outputs\apk\debug\app-debug.apk` para o celular e instale por cima.
+
+---
+
 ## Checklist rápido
 
 - [ ] `npm install` terminou **sem** erro vermelho ERESOLVE

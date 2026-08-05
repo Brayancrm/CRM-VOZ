@@ -37,6 +37,25 @@ export async function listScheduledInRange(
   }));
 }
 
+export async function listScheduledByContact(
+  contactId: string
+): Promise<ScheduledCallWithContact[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT s.*, c.name as contact_name, c.phone_normalized
+     FROM scheduled_calls s
+     JOIN contacts c ON c.id = s.contact_id
+     WHERE s.contact_id = ?
+     ORDER BY s.scheduled_at DESC`,
+    contactId
+  );
+  return rows.map((row) => ({
+    ...rowToScheduled(row),
+    contact_name: row.contact_name as string,
+    phone_normalized: row.phone_normalized as string,
+  }));
+}
+
 export async function createScheduledCall(item: ScheduledCall): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(

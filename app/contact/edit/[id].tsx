@@ -15,9 +15,9 @@ import {
 } from '@/db/repositories/contacts';
 import { buildPhoneNormalized, splitPhoneNormalized } from '@/utils/phone';
 import { DEFAULT_DIAL_CODE } from '@/utils/countryCodes';
-import { colors } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { ContactForm } from '@/components/ContactForm';
+import { useThemedStyles } from '@/hooks/useThemedStyles';
 
 export default function EditContactScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,6 +27,15 @@ export default function EditContactScreen() {
   const [localPhone, setLocalPhone] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const styles = useThemedStyles((c) =>
+    StyleSheet.create({
+      container: { flex: 1, padding: 16, backgroundColor: c.bg },
+      centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+      muted: { color: c.textMuted },
+      mt: { marginTop: 8 },
+    })
+  );
 
   useEffect(() => {
     if (!id) return;
@@ -100,9 +109,4 @@ export default function EditContactScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: colors.bg },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  muted: { color: colors.textMuted },
-  mt: { marginTop: 8 },
-});
+// styles gerados pelo useThemedStyles (dark mode consistente)

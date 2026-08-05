@@ -1,12 +1,16 @@
 import { useEffect, type ReactNode } from 'react';
-import { processTranscriptionQueue } from '@/services/transcriptionQueue';
+import { bootstrapTranscriptionQueue } from '@/services/transcriptionQueue';
+import { syncDeviceCalendarReminders } from '@/services/deviceCalendarReminders';
 
-/** Processa fila de transcrição ao abrir o app e periodicamente. */
+/** Fila de transcrição + lembretes do calendário nativo ao abrir o app. */
 export function TranscriptionBootstrap({ children }: { children: ReactNode }) {
   useEffect(() => {
-    void processTranscriptionQueue();
+    void bootstrapTranscriptionQueue();
+    void syncDeviceCalendarReminders();
+
     const id = setInterval(() => {
-      void processTranscriptionQueue();
+      void bootstrapTranscriptionQueue();
+      void syncDeviceCalendarReminders();
     }, 60_000);
     return () => clearInterval(id);
   }, []);

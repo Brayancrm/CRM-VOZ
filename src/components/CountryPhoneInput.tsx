@@ -2,7 +2,7 @@ import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { COUNTRY_DIAL_CODES } from '@/utils/countryCodes';
 import { PickerField } from '@/components/PickerField';
-import { colors } from '@/constants/theme';
+import { useThemedStyles } from '@/hooks/useThemedStyles';
 
 type Props = {
   dialCode: string;
@@ -18,6 +18,29 @@ export function CountryPhoneInput({
   onLocalNumberChange,
 }: Props) {
   const prefixDisplay = `(+${dialCode})`;
+  const styles = useThemedStyles((c) =>
+    StyleSheet.create({
+      wrap: { marginBottom: 12 },
+      label: { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 6 },
+      row: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+      prefixCol: { width: 96 },
+      numberBox: { flex: 1 },
+      caption: {
+        fontSize: 11,
+        color: c.textMuted,
+        marginBottom: 4,
+      },
+      input: {
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 10,
+        padding: 14,
+        fontSize: 16,
+        backgroundColor: c.surface,
+      },
+      hint: { fontSize: 12, color: c.textMuted, marginTop: 6 },
+    })
+  );
 
   return (
     <View style={styles.wrap}>
@@ -53,24 +76,4 @@ export function CountryPhoneInput({
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { marginBottom: 12 },
-  label: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 6 },
-  row: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
-  prefixCol: { width: 96 },
-  numberBox: { flex: 1 },
-  caption: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    backgroundColor: colors.surface,
-  },
-  hint: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
-});
+// styles gerados pelo useThemedStyles (dark mode consistente)

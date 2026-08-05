@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS scheduled_calls (
   FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_notes_contact ON notes(contact_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scheduled_at ON scheduled_calls(scheduled_at);
 `;

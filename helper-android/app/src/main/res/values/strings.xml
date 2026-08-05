@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KooMind Helper</string>
+    <string name="accessibility_service_label">KooMind App Connector</string>
+    <string name="accessibility_service_description">Permite ao KooMind gravar a sua voz durante ligações GSM no Samsung. Não acede a passwords nem dados bancários — apenas detecta chamadas e activa o microfone do KooMind.</string>
+    <string name="setup_title">Permissões do Helper</string>
+    <string name="setup_body">Autorize tudo abaixo antes de usar o Helper. Os pedidos aparecem aqui — só abra as definições do Android se indicado.</string>
+    <string name="status_mic">Microfone</string>
+    <string name="status_phone">Telefone</string>
+    <string name="status_notifications">Notificações</string>
+    <string name="status_restricted">Definições restritas</string>
+    <string name="status_connector">App Connector (acessibilidade)</string>
+    <string name="status_koomind">KooMind instalado</string>
+    <string name="btn_request_all">Pedir permissões do Android</string>
+    <string name="btn_restricted">Abrir app → Permitir definições restritas</string>
+    <string name="btn_accessibility">Activar KooMind App Connector</string>
+    <string name="btn_continue">Continuar</string>
+    <string name="btn_koomind">Abrir KooMind</string>
+    <string name="btn_refresh">Actualizar estado</string>
+    <string name="ok">OK</string>
+    <string name="missing">Pendente</string>
+    <string name="all_ready_hint">Tudo autorizado — toque em Continuar.</string>
+    <string name="pending_hint">Toque em «Pedir permissões» e siga os passos pendentes.</string>
+    <string name="dashboard_ready">Helper activo e pronto para ligações.</string>
+    <string name="restricted_hint">Android 13+: em Detalhes do app → menu ⋮ → «Permitir definições restritas». Depois active o App Connector em Acessibilidade.</string>
+</resources>

@@ -44,14 +44,22 @@ npm run web            # testar layout no navegador (PC)
 **Fase 4 — Transcrição híbrida (Railway + Whisper)**
 
 - Áudio no celular → API no **Railway** → texto na nota
+- Outros idiomas traduzidos para português automaticamente
 - Configure URL em **Ajustes** — ver [Fase 4 — Railway](docs/FASE-4-RAILWAY.md)
+
+**Fase 5 — Agenda unificada**
+
+- Ligações do app (**APP**) + eventos do calendário do celular (**CELULAR**)
+- Mesmos filtros: dia, semana, mês, 7 dias — ver [Fase 5 — Agenda](docs/FASE-5-AGENDA.md)
 
 ## Documentação
 
 - [Passo a passo completo](docs/PASSO-A-PASSO-DESENVOLVIMENTO.md)
 - [Fase 3 — build Android](docs/FASE-3-BUILD-ANDROID.md)
 - [Fase 4 — Railway](docs/FASE-4-RAILWAY.md)
+- [Fase 5 — Agenda unificada](docs/FASE-5-AGENDA.md)
 
 ## Próximas fases
 
-- Calendário nativo na agenda unificada
+- Detecção automática de ligação (Fase 3b)
+- Polish e publicação (Fase 6)

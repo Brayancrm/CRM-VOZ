@@ -31,7 +31,8 @@ export function buildDateFromParts(
 
 export function getYearOptions(): number[] {
   const y = new Date().getFullYear();
-  return [y, y + 1, y + 2];
+  // Ano actual até +5 (agendamentos mais distantes)
+  return Array.from({ length: 6 }, (_, i) => y + i);
 }
 
 export function getMonthOptions(): { label: string; value: number }[] {

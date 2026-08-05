@@ -1,60 +1,64 @@
 # Fase 3 — Detecção de chamada no Android
 
-A detecção automática de ligação **não funciona no Expo Go**. É preciso um **build de desenvolvimento** com o módulo nativo `react-native-call-detection`.
+A detecção automática **não funciona no Expo Go**. Use o APK nativo (`dist/KooMind.apk` ou `npm run build:apk:release`).
 
 ## O que a Fase 3 faz
 
-1. Ao **atender** (estado `Offhook`), o app:
+1. Ao **atender** ou **estar em ligação** (estado `Offhook`), o app:
    - Associa o número a um contato (ou cria “Chamada +número”)
    - Inicia gravação **só do seu microfone**
-   - Mostra faixa verde “Gravando suas notas de voz”
-   - Notificação Android (canal gravacao-chamada)
+   - Mostra faixa “Gravando suas notas de voz”
+   - Notificação Android (canal `gravacao-chamada`)
 
 2. Ao **desligar** (`Disconnected`):
    - Para a gravação e salva a nota
-   - Abre a tela **Pós-chamada** para editar o resumo
+   - Abre a tela **Pós-chamada** para editar e transcrever
 
-3. **WhatsApp / VoIP**: sem detecção automática — use **Iniciar simulação** na ficha do contato.
+3. **WhatsApp / VoIP**: sem detecção GSM automática — use **Iniciar gravação** na ficha do contato.
 
-## Gerar o app Android (primeira vez)
+## Módulo nativo
 
-O projeto usa **`newArchEnabled: false`** para a biblioteca de detecção de chamada funcionar.
+- Pacote: `@huddle01/react-native-call-detection` (compatível com **Nova Arquitetura** / Expo SDK 54)
+- Permissões `READ_PHONE_STATE` e `READ_CALL_LOG` já estão em `app.json` (não use o plugin Expo do pacote — ele está quebrado no npm)
 
-```bash
-cd CRM-VOZ
+## Gerar / atualizar o app
+
+```powershell
+cd "C:\Users\Dell - Brayan\CRM-VOZ"
 npm install
-npx expo prebuild --platform android
-npx expo run:android
+npm run prebuild:android
+npm run build:apk:release
 ```
 
-Se já tinha instalado antes, **reinstale** após mudar `app.json` (gerar APK de novo).
-
-Ou com cabo USB e depuração USB ativa no celular.
+Instale `dist\KooMind.apk` no celular (desinstale a versão antiga antes).
 
 ## Permissões no celular
 
-Em **Ajustes** do CRM-VOZ → **Solicitar permissões**, e no Android também:
+Em **Ajustes** → **Solicitar permissões**:
 
 - **Telefone** / estado da chamada (`READ_PHONE_STATE`)
 - **Microfone**
 - **Notificações**
 
+No Android 10+, o número do chamador pode exigir também permissão de registro de chamadas (`READ_CALL_LOG`).
+
 ## Testar
 
-1. Cadastre um contato com o **mesmo número** do chip (formato internacional, ex. `5531999999999`).
-2. Com o CRM-VOZ instalado pelo build acima, peça para alguém ligar ou ligue para esse número.
-3. Atenda → deve aparecer a faixa de gravação.
-4. Desligue → tela **Pós-chamada** → salve o resumo → **Ouvir áudio** no histórico.
+1. Cadastre um contato com o **mesmo número** do chip (ex. `5531999999999`).
+2. Instale o **KooMind.apk** (não abra via `npm start` no dia a dia).
+3. Peça para alguém ligar ou ligue para esse número.
+4. **Atenda** → faixa verde de gravação.
+5. **Desligue** → tela **Pós-chamada** → salve → transcrição na nota (se Railway configurado).
 
-## Limitações conhecidas
+## Limitações
 
-- Com o app em segundo plano, o sistema pode limitar a gravação; prefira manter o app aberto ou voltar à faixa verde durante a ligação.
-- Número exibido pela operadora pode vir sem DDI — o app tenta casar pelos últimos 8 dígitos.
-- **iPhone**: detecção automática de ligação celular não está ativa; use simulação ou nota manual.
+- App em segundo plano: o Android pode limitar gravação — prefira manter o app aberto durante a ligação.
+- Número sem DDI: o app casa pelos últimos 8 dígitos.
+- **iPhone**: detecção automática de ligação celular não está ativa; use gravação manual ou simulação.
 
-## Comandos úteis
+## Comandos úteis (desenvolvimento)
 
 ```bash
-npx expo start --dev-client   # Metro para o build instalado
-npm run start:clear
+npm run android          # build + instalar via USB
+npm run start:clear      # Metro, se usar run:android
 ```

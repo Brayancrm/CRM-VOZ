@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import type { ReactNode } from 'react';
-import { colors } from '@/constants/theme';
+import { useThemedStyles } from '@/hooks/useThemedStyles';
 
 type Props = {
   caption: string;
@@ -26,6 +26,68 @@ export function PickerField({
   year,
 }: Props) {
   const isAndroid = Platform.OS === 'android';
+  const styles = useThemedStyles((c) =>
+    StyleSheet.create({
+      wrap: {
+        flex: 1,
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 10,
+        backgroundColor: c.surface,
+        overflow: 'hidden',
+        paddingBottom: 8,
+      },
+      wide: { flex: 1.55 },
+      half: { flex: 1 },
+      year: { flex: 1.15, minWidth: 72 },
+      caption: {
+        fontSize: 11,
+        color: c.textMuted,
+        paddingHorizontal: 10,
+        paddingTop: 8,
+      },
+      valueRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        minHeight: 36,
+        marginTop: 2,
+        paddingLeft: 10,
+        paddingRight: 6,
+        position: 'relative',
+      },
+      display: {
+        flex: 1,
+        fontSize: 16,
+        fontWeight: '600',
+        color: c.text,
+        includeFontPadding: false,
+      },
+      chevron: {
+        fontSize: 14,
+        color: c.primary,
+        marginLeft: 4,
+        paddingRight: 4,
+      },
+      pickerOverlay: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: '100%',
+        height: '100%',
+        opacity: 0,
+      },
+      pickerIOS: {
+        height: 132,
+        width: '100%',
+      },
+      itemIOS: {
+        fontSize: 18,
+        height: 120,
+      },
+    })
+  );
 
   return (
     <View
@@ -69,63 +131,4 @@ export function PickerField({
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-    paddingBottom: 8,
-  },
-  wide: { flex: 1.55 },
-  half: { flex: 1 },
-  year: { flex: 1.15, minWidth: 72 },
-  caption: {
-    fontSize: 11,
-    color: colors.textMuted,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-  },
-  valueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 36,
-    marginTop: 2,
-    paddingLeft: 10,
-    paddingRight: 6,
-    position: 'relative',
-  },
-  display: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    includeFontPadding: false,
-  },
-  chevron: {
-    fontSize: 14,
-    color: colors.primary,
-    marginLeft: 4,
-    paddingRight: 4,
-  },
-  pickerOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
-    opacity: 0,
-  },
-  pickerIOS: {
-    height: 132,
-    width: '100%',
-  },
-  itemIOS: {
-    fontSize: 18,
-    height: 120,
-  },
-});
+// styles gerados pelo useThemedStyles (dark mode consistente)
