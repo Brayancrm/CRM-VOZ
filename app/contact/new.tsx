@@ -13,9 +13,11 @@ import { createId } from '@/utils/id';
 import { Button } from '@/components/ui/Button';
 import { ContactForm } from '@/components/ContactForm';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
+import { useI18n } from '@/i18n';
 
 export default function NewContactScreen() {
   const router = useRouter();
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [dialCode, setDialCode] = useState(DEFAULT_DIAL_CODE);
   const [localPhone, setLocalPhone] = useState('');
@@ -32,12 +34,12 @@ export default function NewContactScreen() {
     const trimmedName = name.trim();
     const phone_normalized = buildPhoneNormalized(dialCode, localPhone);
     if (!trimmedName || !phone_normalized) {
-      Alert.alert('Dados inválidos', 'Informe nome e telefone.');
+      Alert.alert(t('contact.invalidTitle'), t('contact.invalidBody'));
       return;
     }
     const existing = await findContactByPhone(phone_normalized);
     if (existing) {
-      Alert.alert('Duplicado', 'Já existe contato com este telefone.');
+      Alert.alert(t('contact.duplicateTitle'), t('contact.duplicateBody'));
       return;
     }
     setSaving(true);
@@ -49,7 +51,10 @@ export default function NewContactScreen() {
       });
       router.replace(`/contact/${contact.id}`);
     } catch (e) {
-      Alert.alert('Erro', e instanceof Error ? e.message : 'Não foi possível salvar.');
+      Alert.alert(
+        t('common.error'),
+        e instanceof Error ? e.message : t('common.error')
+      );
     } finally {
       setSaving(false);
     }
@@ -68,9 +73,9 @@ export default function NewContactScreen() {
         onDialCodeChange={setDialCode}
         onLocalPhoneChange={setLocalPhone}
       />
-      <Button title="Salvar contato" onPress={save} loading={saving} />
+      <Button title={t('contact.save')} onPress={save} loading={saving} />
       <Button
-        title="Cancelar"
+        title={t('common.cancel')}
         variant="ghost"
         onPress={() => router.back()}
         style={styles.mt}
@@ -78,5 +83,3 @@ export default function NewContactScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-// styles gerados pelo useThemedStyles (dark mode consistente)

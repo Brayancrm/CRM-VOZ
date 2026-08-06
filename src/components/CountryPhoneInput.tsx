@@ -3,6 +3,7 @@ import { Picker } from '@react-native-picker/picker';
 import { COUNTRY_DIAL_CODES } from '@/utils/countryCodes';
 import { PickerField } from '@/components/PickerField';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
+import { useI18n } from '@/i18n';
 
 type Props = {
   dialCode: string;
@@ -17,6 +18,7 @@ export function CountryPhoneInput({
   onDialCodeChange,
   onLocalNumberChange,
 }: Props) {
+  const { t } = useI18n();
   const prefixDisplay = `(+${dialCode})`;
   const styles = useThemedStyles((c) =>
     StyleSheet.create({
@@ -37,6 +39,7 @@ export function CountryPhoneInput({
         padding: 14,
         fontSize: 16,
         backgroundColor: c.surface,
+        color: c.text,
       },
       hint: { fontSize: 12, color: c.textMuted, marginTop: 6 },
     })
@@ -44,11 +47,11 @@ export function CountryPhoneInput({
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>Telefone</Text>
+      <Text style={styles.label}>{t('contact.form.phone')}</Text>
       <View style={styles.row}>
         <View style={styles.prefixCol}>
           <PickerField
-            caption="País"
+            caption={t('contact.form.country')}
             displayValue={prefixDisplay}
             selectedValue={dialCode}
             onValueChange={(v) => onDialCodeChange(String(v))}
@@ -59,10 +62,10 @@ export function CountryPhoneInput({
           </PickerField>
         </View>
         <View style={styles.numberBox}>
-          <Text style={styles.caption}>Número</Text>
+          <Text style={styles.caption}>{t('contact.form.number')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="DDD + número"
+            placeholder={t('contact.form.numberPlaceholder')}
             keyboardType="phone-pad"
             value={localNumber}
             onChangeText={onLocalNumberChange}
@@ -70,10 +73,8 @@ export function CountryPhoneInput({
         </View>
       </View>
       <Text style={styles.hint}>
-        Prefixo {prefixDisplay}. Ex.: 13 99123-4567 no campo número.
+        {t('contact.form.prefixHint', { code: prefixDisplay })}
       </Text>
     </View>
   );
 }
-
-// styles gerados pelo useThemedStyles (dark mode consistente)

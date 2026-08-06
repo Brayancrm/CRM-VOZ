@@ -122,24 +122,29 @@ export function SecretinaAssistantProvider({
       .then((m) => m.stopSpeaking())
       .catch(() => {});
     abortSpeechRecognition();
-    micBusyRef.current = true;
     setWakeListening(false);
-    // Se já estava aberto, fecha e reabre para forçar reset do modal
+
     const alreadyOpen = assistantOpenRef.current;
-    setGreetFirstOnOpen(Boolean(opts?.greetFirst));
-    setAutoListenOnOpen(Boolean(opts?.autoListen ?? opts?.greetFirst));
+    const greet = Boolean(opts?.greetFirst);
+    const auto = Boolean(opts?.autoListen ?? opts?.greetFirst);
+
+    const show = () => {
+      // micBusy só durante o fluxo do modal; não deixar preso se falhar o auto-start
+      micBusyRef.current = Boolean(auto);
+      setGreetFirstOnOpen(greet);
+      setAutoListenOnOpen(auto);
+      setAssistantOpen(true);
+      assistantOpenRef.current = true;
+    };
+
     if (alreadyOpen) {
       setAssistantOpen(false);
       assistantOpenRef.current = false;
-      setTimeout(() => {
-        micBusyRef.current = true;
-        setAssistantOpen(true);
-        assistantOpenRef.current = true;
-      }, 80);
+      micBusyRef.current = false;
+      setTimeout(show, 120);
       return;
     }
-    setAssistantOpen(true);
-    assistantOpenRef.current = true;
+    show();
   }, []);
 
   const closeAssistant = useCallback(() => {

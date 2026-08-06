@@ -268,12 +268,19 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
   useEffect(() => {
     if (!visible) {
       reset();
+      return;
     }
-  }, [visible, reset]);
+    // Cada abertura: limpa locks de sessões anteriores (evita ecrã morto).
+    void unlockSession();
+    autoStartedRef.current = false;
+    setErrorMsg('');
+    setPhaseSafe('idle');
+  }, [visible, reset, unlockSession, setPhaseSafe]);
 
   const openMicForMode = useCallback(
     async (mode: ListenMode) => {
-      if (speakingLockRef.current) return;
+      // Nunca bloquear abertura do mic por TTS preso
+      speakingLockRef.current = false;
       listenModeRef.current = mode;
       abortSpeechRecognition();
       setMicBusy(true);
@@ -419,7 +426,8 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     async (text: string, contactId?: string) => {
       const trimmed = text.trim();
       if (!trimmed || processingRef.current) return;
-      if (speakingLockRef.current) return;
+      // Nunca deixar TTS preso bloquear comandos
+      speakingLockRef.current = false;
 
       // Sim/não após agendamento
       if (listenModeRef.current === 'ask_schedule_note' && !contactId) {
@@ -712,6 +720,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
 
     // Liberta qualquer TTS/mic/processamento preso de tentativas anteriores
     await unlockSession();
+    speakingLockRef.current = false;
     setResult(null);
     resultRef.current = null;
     setErrorMsg('');
@@ -754,18 +763,25 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
   };
 
   useEffect(() => {
-    if (!visible || !autoListenOnOpen || autoStartedRef.current) return;
-    autoStartedRef.current = true;
+    if (!visible || !autoListenOnOpen) return;
+
+    let cancelled = false;
     const greet = greetFirstOnOpen;
-    // clearAutoListen SÓ depois do timeout — senão o effect cancela o timer
-    // (autoListenOnOpen=false → cleanup → clearTimeout) e o mic nunca abre.
+    const delay = greet ? 450 : 600;
+
     const t = setTimeout(() => {
+      if (cancelled) return;
+      // Marca só quando realmente arranca — cleanup não “come” o auto-start
       clearAutoListen();
       void startListening({ greetFirst: greet, skipGreet: !greet });
-    }, greet ? 500 : 700);
-    return () => clearTimeout(t);
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, autoListenOnOpen]);
+  }, [visible, autoListenOnOpen, greetFirstOnOpen]);
 
   const stopListening = () => {
     clearSilenceTimer();

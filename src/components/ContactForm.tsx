@@ -1,6 +1,8 @@
 import { View, TextInput, StyleSheet } from 'react-native';
 import { CountryPhoneInput } from '@/components/CountryPhoneInput';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
+import { useI18n } from '@/i18n';
+import { useColors } from '@/context/ThemeContext';
 
 type Props = {
   name: string;
@@ -19,6 +21,8 @@ export function ContactForm({
   onDialCodeChange,
   onLocalPhoneChange,
 }: Props) {
+  const { t } = useI18n();
+  const colors = useColors();
   const styles = useThemedStyles((c) =>
     StyleSheet.create({
       input: {
@@ -29,6 +33,7 @@ export function ContactForm({
         padding: 14,
         fontSize: 16,
         marginBottom: 12,
+        color: c.text,
       },
     })
   );
@@ -37,7 +42,8 @@ export function ContactForm({
     <View>
       <TextInput
         style={styles.input}
-        placeholder="Nome"
+        placeholder={t('contact.form.name')}
+        placeholderTextColor={colors.textMuted}
         value={name}
         onChangeText={onNameChange}
       />
@@ -50,5 +56,3 @@ export function ContactForm({
     </View>
   );
 }
-
-// styles gerados pelo useThemedStyles (dark mode consistente)

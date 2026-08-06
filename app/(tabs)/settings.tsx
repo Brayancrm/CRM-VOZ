@@ -284,34 +284,40 @@ export default function SettingsScreen() {
 
   const checkAll = async () => {
     try {
+      const ok = t('settings.perms.ok');
+      const denied = t('settings.perms.denied');
+      const grantedLabel = t('settings.perms.granted');
+      const mapStatus = (s: string) =>
+        s === 'granted' ? grantedLabel : s === 'denied' ? denied : s;
+
       const notif = await ensureNotificationPermissions();
       const phone =
         Platform.OS === 'android' ? await hasPhoneStatePermission() : null;
       const callLog =
         Platform.OS === 'android' ? await hasCallLogPermission() : null;
       const { status: contactsStatus } = await Contacts.getPermissionsAsync();
-      let calLine = 'não disponível';
+      let calLine = denied;
       try {
         const cal = await Calendar.getCalendarPermissionsAsync();
-        calLine = cal.status;
+        calLine = mapStatus(cal.status);
       } catch {
-        calLine = 'módulo indisponível';
+        calLine = denied;
       }
       setStatus(
-        `Notificações: ${notif ? 'OK' : 'negado'}\n` +
+        `Notificações / Notifications: ${notif ? ok : denied}\n` +
           (Platform.OS === 'android'
-            ? `Telefone (detecção): ${phone ? 'OK' : 'negado'}\n` +
-              `Registro de chamadas: ${callLog ? 'OK' : 'negado'}\n`
+            ? `Telefone / Phone: ${phone ? ok : denied}\n` +
+              `Call log: ${callLog ? ok : denied}\n`
             : '') +
-          `Detecção automática: ${support.supported ? (isListening ? 'ativa ✓' : 'não iniciou — toque Ativar detecção') : 'indisponível'}\n` +
+          `Detecção / Detection: ${support.supported ? (isListening ? ok : denied) : denied}\n` +
           (Platform.OS === 'android'
-            ? `Bateria sem restrições: ${(await isBatteryOptimizationDisabled()) ? 'OK ✓' : 'NÃO — toque abaixo (obrigatório)'}\n`
+            ? `Battery: ${(await isBatteryOptimizationDisabled()) ? ok : denied}\n`
             : '') +
-          `Contatos: ${contactsStatus}\n` +
-          `Calendário: ${calLine}`
+          `${t('tabs.contacts')}: ${mapStatus(contactsStatus)}\n` +
+          `${t('tabs.agenda')}: ${calLine}`
       );
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Erro ao ler permissões');
+      setStatus(e instanceof Error ? e.message : t('common.error'));
     }
   };
 
@@ -427,12 +433,14 @@ export default function SettingsScreen() {
 
       {Platform.OS === 'android' ? (
         <View style={styles.card}>
-          <Text style={styles.title}>Chamamento por voz</Text>
+          <Text style={styles.title}>{t('settings.wake.title')}</Text>
           <Text style={styles.body}>
-            Com o app aberto, diga «{wakeGreetingWord(lang)} {wakeName}». Ela
-            responde e abre o microfone. Não funciona com o ecrã bloqueado.
+            {t('settings.wake.body', {
+              greeting: wakeGreetingWord(lang),
+              name: wakeName,
+            })}
           </Text>
-          <Text style={styles.label}>Nome de chamamento</Text>
+          <Text style={styles.label}>{t('settings.wake.nameLabel')}</Text>
           <TextInput
             style={styles.input}
             value={wakeNameInput}
@@ -441,53 +449,66 @@ export default function SettingsScreen() {
             autoCapitalize="words"
           />
           <Button
-            title="Guardar nome"
+            title={t('settings.wake.saveName')}
             variant="secondary"
             onPress={async () => {
               await setWakeName(wakeNameInput);
               await refreshWakeName();
               const name = await getWakeName();
               Alert.alert(
-                'Chamamento',
-                `Agora diga «${wakeGreetingWord(lang)} ${name}».`
+                t('settings.wake.title'),
+                t('settings.wake.saved', {
+                  greeting: wakeGreetingWord(lang),
+                  name,
+                })
               );
             }}
             style={styles.mt}
           />
           <Text style={[styles.body, styles.mt]}>
-            Estado:{' '}
-            {wakeEnabled
-              ? wakeListening
-                ? 'escutando…'
-                : 'activo (à espera)'
-              : 'desligado'}
+            {t('settings.wake.state', {
+              state: wakeEnabled
+                ? wakeListening
+                  ? t('settings.wake.stateListening')
+                  : t('settings.wake.stateActive')
+                : t('settings.wake.stateOff'),
+            })}
           </Text>
           <Button
             title={
               wakeEnabled
-                ? `Desactivar «${wakeGreetingWord(lang)} ${wakeName}»`
-                : `Activar «${wakeGreetingWord(lang)} ${wakeName}»`
+                ? t('settings.wake.disable', {
+                    greeting: wakeGreetingWord(lang),
+                    name: wakeName,
+                  })
+                : t('settings.wake.enable', {
+                    greeting: wakeGreetingWord(lang),
+                    name: wakeName,
+                  })
             }
             onPress={async () => {
               try {
                 await setWakeEnabled(!wakeEnabled);
                 Alert.alert(
-                  'Chamamento',
+                  t('settings.wake.title'),
                   !wakeEnabled
-                    ? `Activo. Diga «${wakeGreetingWord(lang)} ${wakeName}» com o app aberto.`
-                    : 'Desactivado.'
+                    ? t('settings.wake.enabledAlert', {
+                        greeting: wakeGreetingWord(lang),
+                        name: wakeName,
+                      })
+                    : t('settings.wake.disabledAlert')
                 );
               } catch (e) {
                 Alert.alert(
-                  'Permissão',
-                  e instanceof Error ? e.message : 'Não foi possível activar.'
+                  t('common.error'),
+                  e instanceof Error ? e.message : t('common.error')
                 );
               }
             }}
             style={styles.mt}
           />
           <Button
-            title="Abrir Falar com SeCretina"
+            title={t('settings.wake.openAssistant')}
             variant="secondary"
             onPress={() =>
               openAssistant({ autoListen: true, greetFirst: true })
@@ -499,56 +520,51 @@ export default function SettingsScreen() {
 
       {Platform.OS === 'android' && isBubbleOverlaySupported() ? (
         <View style={styles.card}>
-          <Text style={styles.title}>Bolha flutuante</Text>
-          <Text style={styles.body}>
-            Ícone «S» solto sobre outros apps. Requer APK novo (não basta a
-            permissão sozinha): depois de instalar, toque em «Activar bolha».
-            Arraste para mover; toque para abrir o SeCretina. Fica uma
-            notificação discreta enquanto estiver activa.
-          </Text>
+          <Text style={styles.title}>{t('settings.bubble.title')}</Text>
+          <Text style={styles.body}>{t('settings.bubble.body')}</Text>
           <Text style={[styles.body, styles.mt]}>
-            Estado:{' '}
-            {bubbleOn
-              ? overlayOk
-                ? 'activa'
-                : 'activa, mas falta permissão de overlay'
-              : 'desligada'}
+            {t('settings.wake.state', {
+              state: bubbleOn
+                ? overlayOk
+                  ? t('settings.bubble.stateOn')
+                  : t('settings.bubble.stateNeedOverlay')
+                : t('settings.bubble.stateOff'),
+            })}
           </Text>
           <Button
-            title={bubbleOn ? 'Desactivar bolha' : 'Activar bolha na tela'}
+            title={
+              bubbleOn
+                ? t('settings.bubble.disable')
+                : t('settings.bubble.enable')
+            }
             onPress={async () => {
               try {
                 if (bubbleOn) {
                   await stopSecretinaBubble();
                   setBubbleOn(false);
-                  Alert.alert('Bolha', 'Desactivada.');
                   return;
                 }
                 const result = await enableSecretinaBubble();
                 if (result === 'need_permission') {
                   Alert.alert(
-                    'Permissão necessária',
-                    'Active «Aparecer sobre outros apps» / «Display over other apps» para o SeCretina e volte aqui para activar de novo.'
+                    t('settings.bubble.title'),
+                    t('settings.bubble.openOverlay')
                   );
                   return;
                 }
                 setBubbleOn(true);
                 setOverlayOk(true);
-                Alert.alert(
-                  'Bolha activa',
-                  'Minimize o app: a bolha «S» continua na tela. Toque nela para falar com a SeCretina.'
-                );
               } catch (e) {
                 Alert.alert(
-                  'Bolha',
-                  e instanceof Error ? e.message : 'Não foi possível activar.'
+                  t('settings.bubble.title'),
+                  e instanceof Error ? e.message : t('common.error')
                 );
               }
             }}
             style={styles.mt}
           />
           <Button
-            title="Abrir permissão de overlay"
+            title={t('settings.bubble.openOverlay')}
             variant="secondary"
             onPress={() => void openOverlayPermissionSettings()}
             style={styles.mt}
@@ -558,12 +574,8 @@ export default function SettingsScreen() {
 
       {Platform.OS !== 'web' ? (
         <View style={styles.card}>
-          <Text style={styles.title}>Lembretes da agenda</Text>
-          <Text style={styles.body}>
-            Avisos antes de compromissos: ligações do CRM (APP) e eventos do
-            calendário do celular (CELULAR). Informe quantos minutos antes quer
-            ser avisado — pode adicionar vários (ex.: 1440 = 1 dia, 60, 15, 5).
-          </Text>
+          <Text style={styles.title}>{t('settings.reminders.title')}</Text>
+          <Text style={styles.body}>{t('settings.reminders.body')}</Text>
 
           <View style={styles.reminderList}>
             {reminderMinutes.map((m) => (
@@ -582,17 +594,17 @@ export default function SettingsScreen() {
             ))}
           </View>
 
-          <Text style={styles.label}>Adicionar lembrete (minutos)</Text>
+          <Text style={styles.label}>{t('settings.reminders.addLabel')}</Text>
           <View style={styles.addReminderRow}>
             <TextInput
               style={[styles.input, styles.addReminderInput]}
-              placeholder="Ex.: 30"
+              placeholder={t('settings.reminders.addPlaceholder')}
               value={newReminderInput}
               onChangeText={setNewReminderInput}
               keyboardType="number-pad"
             />
             <Button
-              title="Adicionar"
+              title={t('settings.reminders.add')}
               variant="secondary"
               onPress={addReminderOffset}
               style={styles.addReminderBtn}
@@ -608,12 +620,17 @@ export default function SettingsScreen() {
                 <Text style={styles.checkMark}>✓</Text>
               ) : null}
             </View>
-            <Text style={styles.toggleLabel}>Avisar na hora da ligação</Text>
+            <Text style={styles.toggleLabel}>
+              {t('settings.reminders.atCall')}
+            </Text>
           </Pressable>
 
-          <Button title="Salvar lembretes" onPress={saveReminderSettings} />
           <Button
-            title="Aplicar a agendamentos pendentes"
+            title={t('settings.reminders.save')}
+            onPress={saveReminderSettings}
+          />
+          <Button
+            title={t('settings.reminders.apply')}
             variant="secondary"
             onPress={applyRemindersToPending}
             style={styles.mt}
@@ -622,42 +639,37 @@ export default function SettingsScreen() {
       ) : null}
 
       <View style={styles.card}>
-        <Text style={styles.title}>Detecção de chamada</Text>
+        <Text style={styles.title}>{t('settings.detection.title')}</Text>
         <Text style={styles.body}>
           {Platform.OS === 'android'
             ? support.reason ??
               (isListening
-                ? 'Ativa: notificação «SeCretina — detecção ativa». Ao terminar a ligação, identifica o contato e abre a nota.'
-                : 'Toque em «Ativar detecção». Cadastre o contato com o mesmo número da ligação.')
-            : (support.reason ??
-              'No iPhone a detecção automática de chamada GSM não está disponível.')}
+                ? t('settings.detection.active')
+                : t('settings.detection.activate'))
+            : (support.reason ?? t('settings.detection.title'))}
         </Text>
         {Platform.OS === 'android' ? (
           <>
             <Text style={[styles.body, styles.mt]}>
-              Checklist:{'\n'}
-              1. Permissão Telefone e Registro de chamadas{'\n'}
-              2. Bateria → Sem restrições para o SeCretina{'\n'}
-              3. Detecção activa + notificação fixa{'\n'}
-              4. Ligação pelo app Telefone — ao desligar, abre a nota
+              {t('settings.detection.checklist')}
             </Text>
             <Button
-              title="Desativar otimização de bateria"
+              title={t('settings.detection.battery')}
               onPress={async () => {
                 try {
                   await requestIgnoreBatteryOptimizations();
                   await checkAll();
                 } catch (e) {
                   Alert.alert(
-                    'Bateria',
-                    e instanceof Error ? e.message : 'Toque em Permitir/OK na janela do Android.'
+                    t('settings.detection.battery'),
+                    e instanceof Error ? e.message : t('common.error')
                   );
                 }
               }}
               style={styles.mt}
             />
             <Button
-              title="Abrir configurações do SeCretina"
+              title={t('settings.detection.openSettings')}
               variant="secondary"
               onPress={() => Linking.openSettings()}
               style={styles.mt}
@@ -666,21 +678,26 @@ export default function SettingsScreen() {
         ) : null}
         {lastPhoneEvent ? (
           <Text style={[styles.status, styles.mt]}>
-            Último evento detectado: {lastPhoneEvent}
+            {lastPhoneEvent}
           </Text>
         ) : null}
         {Platform.OS === 'android' ? (
           <Button
-            title={isListening ? 'Detecção ativa' : 'Ativar detecção de chamada'}
+            title={
+              isListening
+                ? t('settings.detection.active')
+                : t('settings.detection.activate')
+            }
             variant={isListening ? 'secondary' : 'primary'}
             onPress={async () => {
               const ok = await restartDetection();
               Alert.alert(
-                ok ? 'Detecção ativa' : 'Não foi possível ativar',
                 ok
-                  ? 'Deixe a notificação fixa. Ao desligar, o SeCretina identifica o contato e abre a nota.'
-                  : support.reason ??
-                      'Verifique permissão Telefone e reinstale o APK se necessário.'
+                  ? t('settings.detection.active')
+                  : t('common.error'),
+                ok
+                  ? t('settings.detection.active')
+                  : support.reason ?? t('common.error')
               );
               await checkAll();
             }}
@@ -689,17 +706,15 @@ export default function SettingsScreen() {
         ) : null}
       </View>
 
-      <Button title="Solicitar permissões" onPress={requestAll} />
+      <Button title={t('settings.perms.request')} onPress={requestAll} />
       <Button
-        title="Ver status das permissões"
+        title={t('settings.perms.status')}
         variant="secondary"
         onPress={checkAll}
         style={styles.mt}
       />
       {status ? <Text style={styles.status}>{status}</Text> : null}
-      <Text style={styles.footer}>
-        SeCretina — CRM de voz · detecção de chamada + notas
-      </Text>
+      <Text style={styles.footer}>{t('settings.footer')}</Text>
     </ScrollView>
   );
 }

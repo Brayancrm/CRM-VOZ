@@ -10,10 +10,11 @@ function TabEmoji({ emoji }: { emoji: string }) {
 
 export default function TabsLayout() {
   const colors = useColors();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   return (
     <Tabs
+      key={lang}
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,

@@ -33,13 +33,14 @@ function WebBanner() {
 function RootNavigator() {
   const colors = useColors();
   const { isDark } = useTheme();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   return (
     <>
       <WebBanner />
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack
+        key={lang}
         screenOptions={{
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.text,
