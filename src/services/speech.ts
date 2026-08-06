@@ -3,6 +3,7 @@ import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
 import { stopAudio } from '@/services/audioPlayback';
 import {
+  clearGreetCache,
   prefetchPodeFalar,
   speakWithOpenAiTts,
   stopOpenAiTts,
@@ -10,7 +11,7 @@ import {
 import { isOpenAiProxyConfigured } from '@/services/openaiProxy';
 import { getSpeechLocale } from '@/services/secretinaLanguage';
 
-export { prefetchPodeFalar };
+export { prefetchPodeFalar, clearGreetCache };
 
 let speaking = false;
 let speakGeneration = 0;
@@ -144,11 +145,13 @@ export type SpeakResult = {
 };
 
 /**
- * Fala o texto. Preferência: OpenAI pt-BR natural.
- * `heard` só é true se houve reprodução real.
- * Tem timeout global para nunca travar o assistente.
+ * Fala o texto. Preferência: OpenAI natural.
+ * `maxMs` limita o tempo total (ex.: cumprimento rápido).
  */
-export async function speakText(text: string): Promise<SpeakResult> {
+export async function speakText(
+  text: string,
+  opts?: { maxMs?: number; settleMs?: number }
+): Promise<SpeakResult> {
   const trimmed = text.trim();
   if (!trimmed) {
     return { heard: false };
@@ -156,6 +159,8 @@ export async function speakText(text: string): Promise<SpeakResult> {
 
   speakGeneration += 1;
   const generation = speakGeneration;
+  const maxMs = opts?.maxMs ?? 22_000;
+  const settleMs = opts?.settleMs ?? (Platform.OS === 'android' ? 700 : 0);
 
   await stopAudio();
   Speech.stop();
@@ -182,9 +187,12 @@ export async function speakText(text: string): Promise<SpeakResult> {
       heard = await speakLocal(trimmed, generation);
     }
 
-    if (heard && generation === speakGeneration && Platform.OS === 'android') {
-      // Libertar foco de áudio no Samsung antes do mic
-      await new Promise((r) => setTimeout(r, 700));
+    if (
+      heard &&
+      generation === speakGeneration &&
+      settleMs > 0
+    ) {
+      await new Promise((r) => setTimeout(r, settleMs));
     }
     return heard;
   };
@@ -198,7 +206,7 @@ export async function speakText(text: string): Promise<SpeakResult> {
             void stopSpeaking();
           }
           resolve(false);
-        }, 22_000);
+        }, maxMs);
       }),
     ]);
     return { heard };
@@ -207,6 +215,13 @@ export async function speakText(text: string): Promise<SpeakResult> {
       speaking = false;
     }
   }
+}
+
+/** Para tudo e limpa cache de cumprimento (ex.: troca de idioma). */
+export async function hardResetVoicePipeline(): Promise<void> {
+  await stopSpeaking();
+  await clearGreetCache();
+  await prefetchPodeFalar();
 }
 
 export async function stopSpeaking(): Promise<void> {

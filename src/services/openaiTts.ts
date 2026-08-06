@@ -266,3 +266,20 @@ export async function prefetchPodeFalar(): Promise<void> {
   const path = await writeMp3File(bytes, `greet-${voice}-${language}`);
   if (path) greetFileByKey[cacheKey] = path;
 }
+
+/** Limpa cache de cumprimentos (obrigatório ao mudar idioma/voz). */
+export async function clearGreetCache(): Promise<void> {
+  const paths = Object.values(greetFileByKey);
+  for (const key of Object.keys(greetFileByKey)) {
+    delete greetFileByKey[key];
+  }
+  await Promise.all(
+    paths.map(async (path) => {
+      try {
+        await FileSystem.deleteAsync(path, { idempotent: true });
+      } catch {
+        /* ignore */
+      }
+    })
+  );
+}

@@ -76,6 +76,7 @@ export default function SettingsScreen() {
     openAssistant,
     wakeName,
     refreshWakeName,
+    refreshVoicePipeline,
   } = useSecretinaAssistant();
   const { t, lang, setUiLanguage, refreshLanguage } = useI18n();
   const [bubbleOn, setBubbleOn] = useState(false);
@@ -190,7 +191,7 @@ export default function SettingsScreen() {
     setUiLanguage(next);
     await setSecretinaLanguage(next);
     await refreshLanguage();
-    void prefetchPodeFalar();
+    await refreshVoicePipeline();
     Alert.alert(t('settings.language.title'), t('settings.language.saved'));
   };
 

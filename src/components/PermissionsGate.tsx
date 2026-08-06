@@ -276,7 +276,12 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       setUiLanguage(selectedLang);
       await refreshLanguage();
       setLangChosen(true);
-      void prefetchPodeFalar();
+      try {
+        const { hardResetVoicePipeline } = await import('@/services/speech');
+        await hardResetVoicePipeline();
+      } catch {
+        void prefetchPodeFalar();
+      }
       const { c, chosen } = await syncPermissions();
       const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
       if (nextPending >= 0) {

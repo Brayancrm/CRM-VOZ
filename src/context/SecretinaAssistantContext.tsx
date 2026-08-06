@@ -31,7 +31,7 @@ import {
 
 type OpenAssistantOpts = {
   autoListen?: boolean;
-  /** Diz «Pode falar» (OpenAI TTS se houver chave) antes de abrir o mic. */
+  /** Diz o cumprimento antes de abrir o mic. */
   greetFirst?: boolean;
 };
 
@@ -39,6 +39,8 @@ type SecretinaAssistantContextValue = {
   openAssistant: (opts?: OpenAssistantOpts) => void;
   closeAssistant: () => void;
   assistantOpen: boolean;
+  /** Incrementa a cada abertura — remonta o modal (sessão limpa). */
+  openToken: number;
   autoListenOnOpen: boolean;
   greetFirstOnOpen: boolean;
   clearAutoListen: () => void;
@@ -48,6 +50,8 @@ type SecretinaAssistantContextValue = {
   wakeListening: boolean;
   wakeName: string;
   refreshWakeName: () => Promise<void>;
+  /** Ao mudar idioma: para TTS/STT, limpa cache, pré-aquece, reinicia wake. */
+  refreshVoicePipeline: () => Promise<void>;
 };
 
 const SecretinaAssistantContext =
@@ -55,6 +59,7 @@ const SecretinaAssistantContext =
     openAssistant: () => {},
     closeAssistant: () => {},
     assistantOpen: false,
+    openToken: 0,
     autoListenOnOpen: false,
     greetFirstOnOpen: false,
     clearAutoListen: () => {},
@@ -64,11 +69,16 @@ const SecretinaAssistantContext =
     wakeListening: false,
     wakeName: DEFAULT_WAKE_NAME,
     refreshWakeName: async () => {},
+    refreshVoicePipeline: async () => {},
   });
 
 export function useSecretinaAssistant() {
   return useContext(SecretinaAssistantContext);
 }
+
+const WAKE_WATCHDOG_MS = 8_000;
+/** Reinício preventivo se o motor ficar sem eventos demasiado tempo (Samsung). */
+const WAKE_STALE_MS = 40_000;
 
 export function SecretinaAssistantProvider({
   children,
@@ -76,6 +86,7 @@ export function SecretinaAssistantProvider({
   children: ReactNode;
 }) {
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [openToken, setOpenToken] = useState(0);
   const [autoListenOnOpen, setAutoListenOnOpen] = useState(false);
   const [greetFirstOnOpen, setGreetFirstOnOpen] = useState(false);
   const [wakeEnabled, setWakeEnabledState] = useState(false);
@@ -88,6 +99,8 @@ export function SecretinaAssistantProvider({
   const wakeEnabledRef = useRef(false);
   const assistantOpenRef = useRef(false);
   const wakeNameRef = useRef(DEFAULT_WAKE_NAME);
+  const wakeListeningRef = useRef(false);
+  const lastWakeAliveAt = useRef(Date.now());
   const restartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wakeHandledAt = useRef(0);
 
@@ -103,7 +116,6 @@ export function SecretinaAssistantProvider({
       wakeEnabledRef.current = v;
     });
     void refreshWakeName();
-    // Pré-aquece «Pode falar» se o proxy Railway estiver configurado
     void import('@/services/speech')
       .then((m) => m.prefetchPodeFalar())
       .catch(() => {});
@@ -117,34 +129,23 @@ export function SecretinaAssistantProvider({
   }, []);
 
   const openAssistant = useCallback((opts?: OpenAssistantOpts) => {
-    // Cancela TTS/wake presos de sessões anteriores
     void import('@/services/speech')
       .then((m) => m.stopSpeaking())
       .catch(() => {});
     abortSpeechRecognition();
     setWakeListening(false);
+    wakeListeningRef.current = false;
 
-    const alreadyOpen = assistantOpenRef.current;
     const greet = Boolean(opts?.greetFirst);
     const auto = Boolean(opts?.autoListen ?? opts?.greetFirst);
 
-    const show = () => {
-      // micBusy só durante o fluxo do modal; não deixar preso se falhar o auto-start
-      micBusyRef.current = Boolean(auto);
-      setGreetFirstOnOpen(greet);
-      setAutoListenOnOpen(auto);
-      setAssistantOpen(true);
-      assistantOpenRef.current = true;
-    };
-
-    if (alreadyOpen) {
-      setAssistantOpen(false);
-      assistantOpenRef.current = false;
-      micBusyRef.current = false;
-      setTimeout(show, 120);
-      return;
-    }
-    show();
+    micBusyRef.current = Boolean(auto);
+    setGreetFirstOnOpen(greet);
+    setAutoListenOnOpen(auto);
+    // Nova sessão = remonta o modal (estado limpo, sem locks antigos)
+    setOpenToken((n) => n + 1);
+    setAssistantOpen(true);
+    assistantOpenRef.current = true;
   }, []);
 
   const closeAssistant = useCallback(() => {
@@ -191,6 +192,7 @@ export function SecretinaAssistantProvider({
     micBusyRef.current = busy;
     if (busy) {
       setWakeListening(false);
+      wakeListeningRef.current = false;
     }
   }, []);
 
@@ -211,6 +213,7 @@ export function SecretinaAssistantProvider({
         abortSpeechRecognition();
       }
       setWakeListening(false);
+      wakeListeningRef.current = false;
     }
   }, []);
 
@@ -222,6 +225,11 @@ export function SecretinaAssistantProvider({
 
     void (async () => {
       try {
+        abortSpeechRecognition();
+        await new Promise((r) => setTimeout(r, 180));
+        if (assistantOpenRef.current || micBusyRef.current) return;
+        if (!wakeEnabledRef.current) return;
+
         const { getSpeechLocale } = await import('@/services/secretinaLanguage');
         const lang = await getSpeechLocale();
         ExpoSpeechRecognitionModule.start({
@@ -229,8 +237,11 @@ export function SecretinaAssistantProvider({
           interimResults: true,
           continuous: true,
         });
+        lastWakeAliveAt.current = Date.now();
+        wakeListeningRef.current = true;
         setWakeListening(true);
       } catch {
+        wakeListeningRef.current = false;
         setWakeListening(false);
       }
     })();
@@ -247,8 +258,29 @@ export function SecretinaAssistantProvider({
       ) {
         startWakeListen();
       }
-    }, 1200);
+    }, 900);
   }, [startWakeListen]);
+
+  const refreshVoicePipeline = useCallback(async () => {
+    try {
+      const { hardResetVoicePipeline } = await import('@/services/speech');
+      await hardResetVoicePipeline();
+    } catch {
+      /* ignore */
+    }
+    abortSpeechRecognition();
+    micBusyRef.current = false;
+    wakeListeningRef.current = false;
+    setWakeListening(false);
+    lastWakeAliveAt.current = 0;
+    if (
+      wakeEnabledRef.current &&
+      !assistantOpenRef.current &&
+      AppState.currentState === 'active'
+    ) {
+      scheduleWakeRestart();
+    }
+  }, [scheduleWakeRestart]);
 
   useEffect(() => {
     if (
@@ -260,6 +292,7 @@ export function SecretinaAssistantProvider({
       scheduleWakeRestart();
     } else {
       setWakeListening(false);
+      wakeListeningRef.current = false;
       if (!assistantOpenRef.current && !micBusyRef.current) {
         abortSpeechRecognition();
       }
@@ -269,21 +302,46 @@ export function SecretinaAssistantProvider({
     };
   }, [wakeEnabled, appActive, assistantOpen, scheduleWakeRestart]);
 
+  // Watchdog: se o wake deveria estar activo e ficou morto/stale, reinicia
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    if (!wakeEnabled || !appActive || assistantOpen) return;
+
+    const id = setInterval(() => {
+      if (assistantOpenRef.current || micBusyRef.current) return;
+      if (!wakeEnabledRef.current) return;
+      if (AppState.currentState !== 'active') return;
+
+      const stale = Date.now() - lastWakeAliveAt.current > WAKE_STALE_MS;
+      if (!wakeListeningRef.current || stale) {
+        abortSpeechRecognition();
+        wakeListeningRef.current = false;
+        setWakeListening(false);
+        scheduleWakeRestart();
+      }
+    }, WAKE_WATCHDOG_MS);
+
+    return () => clearInterval(id);
+  }, [wakeEnabled, appActive, assistantOpen, scheduleWakeRestart]);
+
   useSpeechRecognitionEvent('result', (event) => {
     if (assistantOpenRef.current || micBusyRef.current) return;
     if (!wakeEnabledRef.current) return;
+
+    lastWakeAliveAt.current = Date.now();
 
     const text = event.results[0]?.transcript ?? '';
     if (!matchesWakePhrase(text, wakeNameRef.current)) return;
 
     const now = Date.now();
-    if (now - wakeHandledAt.current < 2500) return;
+    if (now - wakeHandledAt.current < 2000) return;
     wakeHandledAt.current = now;
 
     openAssistant({ autoListen: true, greetFirst: true });
   });
 
   useSpeechRecognitionEvent('end', () => {
+    wakeListeningRef.current = false;
     setWakeListening(false);
     if (
       wakeEnabledRef.current &&
@@ -295,6 +353,7 @@ export function SecretinaAssistantProvider({
   });
 
   useSpeechRecognitionEvent('error', () => {
+    wakeListeningRef.current = false;
     setWakeListening(false);
     if (
       wakeEnabledRef.current &&
@@ -310,6 +369,7 @@ export function SecretinaAssistantProvider({
       openAssistant,
       closeAssistant,
       assistantOpen,
+      openToken,
       autoListenOnOpen,
       greetFirstOnOpen,
       clearAutoListen,
@@ -319,11 +379,13 @@ export function SecretinaAssistantProvider({
       wakeListening,
       wakeName,
       refreshWakeName,
+      refreshVoicePipeline,
     }),
     [
       openAssistant,
       closeAssistant,
       assistantOpen,
+      openToken,
       autoListenOnOpen,
       greetFirstOnOpen,
       clearAutoListen,
@@ -333,6 +395,7 @@ export function SecretinaAssistantProvider({
       wakeListening,
       wakeName,
       refreshWakeName,
+      refreshVoicePipeline,
     ]
   );
 
@@ -341,10 +404,13 @@ export function SecretinaAssistantProvider({
       <View style={styles.root}>
         {children}
         <SecretinaFab />
-        <SecretinaAssistantModal
-          visible={assistantOpen}
-          onClose={closeAssistant}
-        />
+        {assistantOpen ? (
+          <SecretinaAssistantModal
+            key={openToken}
+            visible
+            onClose={closeAssistant}
+          />
+        ) : null}
       </View>
     </SecretinaAssistantContext.Provider>
   );
