@@ -53,7 +53,7 @@ export async function getOpenAiTtsVoice(): Promise<string> {
 }
 
 /**
- * Detecta «olá {nome}», «oi {nome}», etc.
+ * Detecta «olá/hola/hello {nome}», «oi {nome}», etc.
  * Nome pode ter várias palavras (ex.: «Secretária Ana»).
  */
 export function matchesWakePhrase(spoken: string, wakeName: string): boolean {
@@ -62,7 +62,12 @@ export function matchesWakePhrase(spoken: string, wakeName: string): boolean {
   if (!n || !name || name.length < 2) return false;
 
   const nameRe = name.replace(/\s+/g, '\\s+');
-  if (new RegExp(`\\b(ola|oi|ei|hey|eai)\\s+${nameRe}\\b`).test(n)) {
+  // pt: ola/oi/ei/eai · es: hola · en: hello/hi · comum: hey
+  if (
+    new RegExp(
+      `\\b(ola|oi|ei|hey|eai|hola|hello|hi)\\s+${nameRe}\\b`
+    ).test(n)
+  ) {
     return true;
   }
   if (new RegExp(`^${nameRe}$`).test(n)) return true;
@@ -80,7 +85,10 @@ export function stripWakeFromText(spoken: string, wakeName: string): string {
   const name = normalizeSpoken(wakeName).replace(/\s+/g, '\\s+');
   let t = spoken.trim();
   t = t.replace(
-    new RegExp(`^(olá|ola|oi|ei|hey|eai)\\s+${name}\\s*[,.]?\\s*`, 'i'),
+    new RegExp(
+      `^(olá|ola|oi|ei|hey|eai|hola|hello|hi)\\s+${name}\\s*[,.]?\\s*`,
+      'i'
+    ),
     ''
   );
   t = t.replace(new RegExp(`^${name}\\s*[,.]?\\s*`, 'i'), '');

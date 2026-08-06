@@ -1,13 +1,13 @@
 import { normalizeSpoken } from '@/utils/normalizeSpoken';
 
 const WEEKDAYS: { re: RegExp; day: number }[] = [
-  { re: /\bdomingo\b/, day: 0 },
-  { re: /\bsegunda(?:-feira)?\b/, day: 1 },
-  { re: /\bterca(?:-feira)?\b/, day: 2 },
-  { re: /\bquarta(?:-feira)?\b/, day: 3 },
-  { re: /\bquinta(?:-feira)?\b/, day: 4 },
-  { re: /\bsexta(?:-feira)?\b/, day: 5 },
-  { re: /\bsabado\b/, day: 6 },
+  { re: /\bdomingo\b|\bsunday\b/, day: 0 },
+  { re: /\bsegunda(?:-feira)?\b|\bmonday\b|\blunes\b/, day: 1 },
+  { re: /\bterca(?:-feira)?\b|\btuesday\b|\bmartes\b/, day: 2 },
+  { re: /\bquarta(?:-feira)?\b|\bwednesday\b|\bmiercoles\b/, day: 3 },
+  { re: /\bquinta(?:-feira)?\b|\bthursday\b|\bjueves\b/, day: 4 },
+  { re: /\bsexta(?:-feira)?\b|\bfriday\b|\bviernes\b/, day: 5 },
+  { re: /\bsabado\b|\bsaturday\b/, day: 6 },
 ];
 
 const MONTHS: { re: RegExp; month: number }[] = [
@@ -43,7 +43,7 @@ function parseHourMinute(text: string): { hour: number; minute: number } | null 
   }
 
   m = n.match(
-    /\b(?:as|a)\s+(\d{1,2})(?:\s*(?:horas?|hrs?))?(?:\s+e\s+(\d{1,2}))?\b/
+    /\b(?:as|a|at|a\s+las?)\s+(\d{1,2})(?:\s*(?:horas?|hrs?|h|o'?clock))?(?:\s+e\s+(\d{1,2}))?\b/
   );
   if (m) {
     return { hour: Number(m[1]), minute: m[2] ? Number(m[2]) : 0 };
@@ -52,6 +52,14 @@ function parseHourMinute(text: string): { hour: number; minute: number } | null 
   m = n.match(/\b(\d{1,2})\s*(?:horas?|hrs?)\b/);
   if (m) {
     return { hour: Number(m[1]), minute: 0 };
+  }
+
+  m = n.match(/\b(\d{1,2})\s*(?:am|pm)\b/);
+  if (m) {
+    let hour = Number(m[1]);
+    if (n.includes('pm') && hour < 12) hour += 12;
+    if (n.includes('am') && hour === 12) hour = 0;
+    return { hour, minute: 0 };
   }
 
   m = n.match(/\b(\d{1,2})\s+da\s+(manha|tarde|noite)\b/);
@@ -67,7 +75,7 @@ function parseHourMinute(text: string): { hour: number; minute: number } | null 
     return { hour, minute: 0 };
   }
 
-  m = n.match(/\b(?:as|a)\s+(\d{1,2})\b/);
+  m = n.match(/\b(?:as|a|at|a\s+las?)\s+(\d{1,2})\b/);
   if (m) {
     return { hour: Number(m[1]), minute: 0 };
   }
@@ -165,11 +173,11 @@ export function parseSpokenDateTime(
     }
   }
 
-  if (/\bhoje\b/.test(n)) {
+  if (/\bhoje\b|\btoday\b|\bhoy\b/.test(n)) {
     // keep date
-  } else if (/\bdepois\s+de\s+amanha\b/.test(n)) {
+  } else if (/\bdepois\s+de\s+amanha\b|\bday\s+after\s+tomorrow\b|\bpasado\s+manana\b/.test(n)) {
     result.setDate(result.getDate() + 2);
-  } else if (/\bamanha\b/.test(n)) {
+  } else if (/\bamanha\b|\btomorrow\b|\bmanana\b/.test(n)) {
     result.setDate(result.getDate() + 1);
   } else {
     let matchedWeekday = false;
@@ -217,7 +225,7 @@ export function parseSpokenDateTime(
 
   result.setHours(hour, minute, 0, 0);
   if (result.getTime() <= now.getTime() + 60_000) {
-    if (/\bhoje\b/.test(n)) return null;
+    if (/\bhoje\b|\btoday\b|\bhoy\b/.test(n)) return null;
     result.setDate(result.getDate() + 1);
   }
 

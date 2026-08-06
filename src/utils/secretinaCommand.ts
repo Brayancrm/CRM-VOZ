@@ -35,32 +35,34 @@ type ContactLike = { id: string; name: string };
 /** Em JS, \b falha com acentos (ã, ç…). Usar texto já normalizado sem acentos. */
 function hasScheduleKeyword(norm: string): boolean {
   return (
-    /\b(agenda|agende|agendar|agendamento|agendamentos|marca|marque|marcar)\b/.test(
+    /\b(agenda|agende|agendar|agendamento|agendamentos|marca|marque|marcar|schedule|schedules|book|booking|cita|citas|agendar)\b/.test(
       norm
-    ) || /\b(ligacao|chamada)\b/.test(norm)
+    ) || /\b(ligacao|chamada|call|llamada)\b/.test(norm)
   );
 }
 
 function hasListAgendaKeyword(norm: string): boolean {
-  return /\b(o\s+que\s+tenho|quais|mostra|mostrar|lista|listar|pesquisa|pesquisar|busca|buscar|consulta|consultar)\b/.test(
+  return /\b(o\s+que\s+tenho|quais|mostra|mostrar|lista|listar|pesquisa|pesquisar|busca|buscar|consulta|consultar|what\s+do\s+i\s+have|show|list|search|que\s+tengo|mostrar|buscar)\b/.test(
     norm
   );
 }
 
 function hasCancelKeyword(norm: string): boolean {
-  return /\b(cancela|cancelar|cancele|desmarca|desmarcar|apaga|apagar|remove|remover)\b/.test(
+  return /\b(cancela|cancelar|cancele|desmarca|desmarcar|apaga|apagar|remove|remover|cancel|delete|borra|borrar|anula|anular)\b/.test(
     norm
   );
 }
 
 function hasRescheduleKeyword(norm: string): boolean {
-  return /\b(reagenda|reagendar|remarca|remarcar|move|mover|passa|passar|muda|mudar)\b/.test(
+  return /\b(reagenda|reagendar|remarca|remarcar|move|mover|passa|passar|muda|mudar|reschedule|postpone|mueve|mover|reprograma)\b/.test(
     norm
   );
 }
 
 function hasNoteKeyword(norm: string): boolean {
-  return /\b(nota|notas|anota|anotar|anote|anotacao)\b/.test(norm);
+  return /\b(nota|notas|anota|anotar|anote|anotacao|note|notes|write|anota|anotacion)\b/.test(
+    norm
+  );
 }
 
 function stripArticles(q: string): string {
@@ -73,11 +75,11 @@ function stripArticles(q: string): string {
  */
 function findWhenStartIndex(norm: string): number {
   const patterns = [
-    /\bdepois\s+de\s+amanha\b/,
-    /\bamanha\b/,
-    /\bhoje\b/,
+    /\bdepois\s+de\s+amanha\b|\bday\s+after\s+tomorrow\b|\bpasado\s+manana\b/,
+    /\bamanha\b|\btomorrow\b|\bmanana\b/,
+    /\bhoje\b|\btoday\b|\bhoy\b/,
     /\bdaqui\s+a\s+\d{1,2}\s+anos?\b/,
-    /\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)(?:\s*feira)?\b/,
+    /\b(segunda|terca|quarta|quinta|sexta|sabado|domingo|monday|tuesday|wednesday|thursday|friday|saturday|sunday|lunes|martes|miercoles|jueves|viernes)(?:\s*feira)?\b/,
     /\b(?:dia\s+)?\d{1,2}\s+de\s+(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de\s+20\d{2})?\b/,
     /\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]20\d{2}\b/,
     /\bdia\s+\d{1,2}(?:\s*(?:de|\/|-)\s*(?:\d{1,2}|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro))?\b/,
@@ -380,10 +382,21 @@ function parseNoteCommand(cleaned: string, norm: string): SecretinaIntent | null
  * Interpreta comando por palavras-chave na frase (não exige formato exacto).
  * Prioridade: listar → cancelar → remarcar → criar agenda → nota.
  */
-export function parseSecretinaCommand(raw: string): SecretinaIntent {
+export function parseSecretinaCommand(
+  raw: string,
+  lang: 'pt-BR' | 'es' | 'en' = 'pt-BR'
+): SecretinaIntent {
   const cleaned = raw.trim().replace(/\s+/g, ' ');
   if (!cleaned) {
-    return { type: 'unknown', reason: 'Não ouvi nenhum comando.' };
+    return {
+      type: 'unknown',
+      reason:
+        lang === 'es'
+          ? 'No oí ningún comando.'
+          : lang === 'en'
+            ? 'I did not hear any command.'
+            : 'Não ouvi nenhum comando.',
+    };
   }
 
   const norm = normalizeSpoken(cleaned);
@@ -413,14 +426,22 @@ export function parseSecretinaCommand(raw: string): SecretinaIntent {
     return {
       type: 'unknown',
       reason:
-        'Entendi a intenção, mas faltam dados. Ex.: «o que tenho amanhã», «cancela o com a Maria», «agenda com Paulo amanhã às 15».',
+        lang === 'es'
+          ? 'Entendí la intención, pero faltan datos. Ej.: «qué tengo mañana», «cancela lo de María», «agenda con Paulo mañana a las 15».'
+          : lang === 'en'
+            ? 'I got the intent, but details are missing. E.g. “what do I have tomorrow”, “cancel the one with Maria”, “schedule Paulo tomorrow at 3”.'
+            : 'Entendi a intenção, mas faltam dados. Ex.: «o que tenho amanhã», «cancela o com a Maria», «agenda com Paulo amanhã às 15».',
     };
   }
 
   return {
     type: 'unknown',
     reason:
-      'Não entendi. Pode perguntar a agenda («o que tenho hoje»), cancelar, remarcar, criar agenda ou nota.',
+      lang === 'es'
+        ? 'No entendí. Puede preguntar la agenda («qué tengo hoy»), cancelar, remarcar, crear cita o nota.'
+        : lang === 'en'
+          ? 'I did not understand. You can ask the agenda (“what do I have today”), cancel, reschedule, create an appointment or a note.'
+          : 'Não entendi. Pode perguntar a agenda («o que tenho hoje»), cancelar, remarcar, criar agenda ou nota.',
   };
 }
 

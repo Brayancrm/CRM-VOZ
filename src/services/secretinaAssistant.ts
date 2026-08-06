@@ -17,11 +17,29 @@ import {
   listAgendaVoice,
   rescheduleVoice,
   speakAmbiguousSchedules,
-  type AgendaVoiceItem,
 } from '@/services/secretinaAgendaVoice';
 import { scheduleCallReminders } from '@/services/notifications';
+import {
+  getSecretinaLanguage,
+  type SecretinaLanguage,
+} from '@/services/secretinaLanguage';
+import {
+  msgBadDateTime,
+  msgContactChosenMissing,
+  msgContactNotFound,
+  msgDateInPast,
+  msgMissingNote,
+  msgNoAction,
+  msgNoCommand,
+  msgNoteCreated,
+  msgRescheduleNeedWhen,
+  msgRescheduleNotFound,
+  msgScheduleNotFound,
+  msgScheduleNotFoundShort,
+  msgEmptyNote,
+  msgScheduled,
+} from '@/services/secretinaSpeak';
 import { createId } from '@/utils/id';
-import { formatDateTime } from '@/utils/date';
 import {
   matchContactBySpokenName,
   parseSecretinaCommand,
@@ -32,6 +50,7 @@ import {
   buildAmbiguousSpeakMessage,
 } from '@/utils/contactChoice';
 import type { Contact } from '@/types';
+import type { AgendaVoiceItem } from '@/services/secretinaAgendaVoice';
 
 export type AssistantSuccess = {
   ok: true;
@@ -65,6 +84,7 @@ export type RunCommandOptions = {
 function resolveContact(
   query: string,
   contacts: Contact[],
+  lang: SecretinaLanguage,
   contactId?: string
 ):
   | { ok: true; contact: Contact }
@@ -77,7 +97,7 @@ function resolveContact(
         result: {
           ok: false,
           spokenText: query,
-          message: 'Contacto escolhido não encontrado.',
+          message: msgContactChosenMissing(lang),
         },
       };
     }
@@ -91,7 +111,7 @@ function resolveContact(
       result: {
         ok: false,
         spokenText: query,
-        message: `Não encontrei o contacto «${query}». Cadastre o nome ou diga o nome completo.`,
+        message: msgContactNotFound(lang, query),
       },
     };
   }
@@ -104,8 +124,8 @@ function resolveContact(
       result: {
         ok: false,
         spokenText: query,
-        message: buildAmbiguousScreenMessage(ambiguousContacts),
-        speakMessage: buildAmbiguousSpeakMessage(ambiguousContacts),
+        message: buildAmbiguousScreenMessage(ambiguousContacts, lang),
+        speakMessage: buildAmbiguousSpeakMessage(ambiguousContacts, lang),
         ambiguous: ambiguousContacts,
         pendingText: query,
       },
@@ -180,12 +200,14 @@ function resolveWhenMs(
 async function runListAgenda(
   spokenText: string,
   action: Extract<AiAction, { type: 'list_agenda' }>,
-  reply: string
+  reply: string,
+  lang: SecretinaLanguage
 ): Promise<AssistantResult> {
   const listed = await listAgendaVoice({
     whenRaw: action.whenRaw || spokenText,
     contactQuery: action.contactQuery,
     searchText: action.searchText || spokenText,
+    lang,
   });
   return {
     ok: true,
@@ -199,7 +221,8 @@ async function runListAgenda(
 async function runCancelSchedule(
   spokenText: string,
   action: Extract<AiAction, { type: 'cancel_schedule' }>,
-  reply: string
+  reply: string,
+  lang: SecretinaLanguage
 ): Promise<AssistantResult> {
   const candidates = await findScheduleCandidates({
     contactQuery: action.contactQuery,
@@ -209,19 +232,19 @@ async function runCancelSchedule(
     return {
       ok: false,
       spokenText,
-      message:
-        'Não encontrei esse agendamento. Diga o nome e o dia, por exemplo «cancela o com a Maria amanhã».',
+      message: msgScheduleNotFound(lang),
     };
   }
   if (candidates.length > 1) {
+    const amb = speakAmbiguousSchedules(candidates, lang);
     return {
       ok: false,
       spokenText,
-      message: speakAmbiguousSchedules(candidates),
-      speakMessage: speakAmbiguousSchedules(candidates),
+      message: amb,
+      speakMessage: amb,
     };
   }
-  const msg = await cancelScheduleVoice(candidates[0]);
+  const msg = await cancelScheduleVoice(candidates[0], lang);
   return {
     ok: true,
     kind: 'cancel',
@@ -240,22 +263,22 @@ async function runCancelSchedule(
 async function runReschedule(
   spokenText: string,
   action: AiActionReschedule,
-  reply: string
+  reply: string,
+  lang: SecretinaLanguage
 ): Promise<AssistantResult> {
   const newAt = resolveWhenMs(action);
   if (newAt == null) {
     return {
       ok: false,
       spokenText,
-      message:
-        'Para remarcar diga a nova data e hora. Ex.: «move o do Paulo para quinta às 10».',
+      message: msgRescheduleNeedWhen(lang),
     };
   }
   if (newAt < Date.now() + 60_000) {
     return {
       ok: false,
       spokenText,
-      message: 'A nova data/hora ficou no passado. Diga um horário futuro.',
+      message: msgDateInPast(lang),
     };
   }
 
@@ -267,20 +290,20 @@ async function runReschedule(
     return {
       ok: false,
       spokenText,
-      message:
-        'Não encontrei o agendamento para remarcar. Diga o contacto e, se puder, o dia actual.',
+      message: msgRescheduleNotFound(lang),
     };
   }
   if (candidates.length > 1) {
+    const amb = speakAmbiguousSchedules(candidates, lang);
     return {
       ok: false,
       spokenText,
-      message: speakAmbiguousSchedules(candidates),
-      speakMessage: speakAmbiguousSchedules(candidates),
+      message: amb,
+      speakMessage: amb,
     };
   }
 
-  const msg = await rescheduleVoice(candidates[0], newAt);
+  const msg = await rescheduleVoice(candidates[0], newAt, lang);
   return {
     ok: true,
     kind: 'reschedule',
@@ -301,20 +324,20 @@ async function runAiActions(
   spokenText: string,
   actions: AiAction[],
   reply: string,
+  lang: SecretinaLanguage,
   options?: RunCommandOptions
 ): Promise<AssistantResult> {
-  // Acções de agenda rica: uma de cada vez (prioridade)
   const list = actions.find((a) => a.type === 'list_agenda');
   if (list && list.type === 'list_agenda') {
-    return runListAgenda(spokenText, list, reply);
+    return runListAgenda(spokenText, list, reply, lang);
   }
   const cancel = actions.find((a) => a.type === 'cancel_schedule');
   if (cancel && cancel.type === 'cancel_schedule') {
-    return runCancelSchedule(spokenText, cancel, reply);
+    return runCancelSchedule(spokenText, cancel, reply, lang);
   }
   const move = actions.find((a) => a.type === 'reschedule');
   if (move && move.type === 'reschedule') {
-    return runReschedule(spokenText, move, reply);
+    return runReschedule(spokenText, move, reply, lang);
   }
 
   const contacts = await listContacts();
@@ -333,6 +356,7 @@ async function runAiActions(
     const resolved = resolveContact(
       action.contactQuery,
       contacts,
+      lang,
       options?.contactId
     );
     if (!resolved.ok) {
@@ -350,29 +374,28 @@ async function runAiActions(
         return {
           ok: false,
           spokenText,
-          message: 'Falta o texto da nota.',
+          message: msgMissingNote(lang),
         };
       }
       const created = await createNoteAction(contact, action.noteBody.trim());
       noteId = created.noteId;
       noteBody = created.noteBody;
       didNote = true;
-      messages.push(`Nota criada para ${contact.name}`);
+      messages.push(msgNoteCreated(lang, contact.name).replace(/\.$/, ''));
     } else {
       const atMs = resolveWhenMs(action);
       if (atMs == null) {
         return {
           ok: false,
           spokenText,
-          message:
-            'Não consegui interpretar a data/hora. Tente «amanhã às 15» ou uma data completa.',
+          message: msgBadDateTime(lang),
         };
       }
       if (atMs < Date.now() + 60_000) {
         return {
           ok: false,
           spokenText,
-          message: 'A data/hora ficou no passado. Diga um horário futuro.',
+          message: msgDateInPast(lang),
         };
       }
       const scheduleNote = (action.note ?? '').trim();
@@ -381,7 +404,7 @@ async function runAiActions(
       scheduledAt = created.scheduledAt;
       didSchedule = true;
       messages.push(
-        `Agendei ligação com ${contact.name} para ${formatDateTime(atMs)}`
+        msgScheduled(lang, contact.name, atMs).replace(/\.$/, '')
       );
     }
   }
@@ -390,7 +413,7 @@ async function runAiActions(
     return {
       ok: false,
       spokenText,
-      message: reply || 'Não identifiquei nenhuma acção.',
+      message: reply || msgNoAction(lang),
     };
   }
 
@@ -416,16 +439,16 @@ export async function runSecretinaVoiceCommand(
   spokenText: string,
   options?: RunCommandOptions
 ): Promise<AssistantResult> {
+  const lang = await getSecretinaLanguage();
   const trimmed = spokenText.trim();
   if (!trimmed) {
     return {
       ok: false,
       spokenText,
-      message: 'Não ouvi nenhum comando.',
+      message: msgNoCommand(lang),
     };
   }
 
-  // 1) OpenAI
   try {
     const ai = await interpretCommandWithOpenAi(trimmed);
     if (ai) {
@@ -437,7 +460,7 @@ export async function runSecretinaVoiceCommand(
         };
       }
       if (ai.actions.length > 0) {
-        return runAiActions(trimmed, ai.actions, ai.reply, options);
+        return runAiActions(trimmed, ai.actions, ai.reply, lang, options);
       }
       if (ai.reply) {
         return {
@@ -451,8 +474,7 @@ export async function runSecretinaVoiceCommand(
     console.warn('SeCretina OpenAI interpret fallback', e);
   }
 
-  // 2) Parser local
-  const parsed = parseSecretinaCommand(trimmed);
+  const parsed = parseSecretinaCommand(trimmed, lang);
 
   if (parsed.type === 'unknown') {
     return {
@@ -471,7 +493,8 @@ export async function runSecretinaVoiceCommand(
         whenRaw: parsed.whenRaw,
         searchText: trimmed,
       },
-      ''
+      '',
+      lang
     );
   }
 
@@ -483,7 +506,8 @@ export async function runSecretinaVoiceCommand(
         contactQuery: parsed.contactQuery,
         whenRaw: parsed.whenRaw,
       },
-      ''
+      '',
+      lang
     );
   }
 
@@ -496,7 +520,8 @@ export async function runSecretinaVoiceCommand(
         fromWhenRaw: parsed.fromWhenRaw,
         whenRaw: parsed.whenRaw,
       },
-      ''
+      '',
+      lang
     );
   }
 
@@ -504,6 +529,7 @@ export async function runSecretinaVoiceCommand(
   const resolved = resolveContact(
     parsed.contactQuery,
     contacts,
+    lang,
     options?.contactId
   );
   if (!resolved.ok) {
@@ -520,8 +546,7 @@ export async function runSecretinaVoiceCommand(
       return {
         ok: false,
         spokenText: trimmed,
-        message:
-          'Falta o texto da nota. Ex.: «cria uma nota para o Paulo dizendo que…».',
+        message: msgMissingNote(lang),
       };
     }
     const created = await createNoteAction(contact, parsed.noteBody);
@@ -532,7 +557,7 @@ export async function runSecretinaVoiceCommand(
       noteId: created.noteId,
       noteBody: created.noteBody,
       spokenText: trimmed,
-      message: `Nota criada para ${contact.name}.`,
+      message: msgNoteCreated(lang, contact.name),
     };
   }
 
@@ -541,8 +566,7 @@ export async function runSecretinaVoiceCommand(
     return {
       ok: false,
       spokenText: trimmed,
-      message:
-        'Não consegui interpretar a data/hora. Tente «amanhã às 15» ou «quinta às 10».',
+      message: msgBadDateTime(lang),
     };
   }
   const atMs = at.getTime();
@@ -550,8 +574,7 @@ export async function runSecretinaVoiceCommand(
     return {
       ok: false,
       spokenText: trimmed,
-      message:
-        'A data/hora ficou no passado. Diga um horário futuro, por exemplo «amanhã às 15».',
+      message: msgDateInPast(lang),
     };
   }
 
@@ -563,7 +586,7 @@ export async function runSecretinaVoiceCommand(
     scheduledId: created.scheduledId,
     scheduledAt: created.scheduledAt,
     spokenText: trimmed,
-    message: `Agendei ligação com ${contact.name} para ${formatDateTime(atMs)}.`,
+    message: msgScheduled(lang, contact.name, atMs),
     askScheduleNote: true,
   };
 }
@@ -572,13 +595,14 @@ export async function updateScheduledCallNote(
   scheduledId: string,
   note: string
 ): Promise<{ ok: true } | { ok: false; message: string }> {
+  const lang = await getSecretinaLanguage();
   const current = await getScheduledById(scheduledId);
   if (!current) {
-    return { ok: false, message: 'Agendamento não encontrado.' };
+    return { ok: false, message: msgScheduleNotFoundShort(lang) };
   }
   const body = note.trim();
   if (!body) {
-    return { ok: false, message: 'A nota ficou vazia.' };
+    return { ok: false, message: msgEmptyNote(lang) };
   }
   await rescheduleScheduledCall(scheduledId, {
     scheduled_at: current.scheduled_at,

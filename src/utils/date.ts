@@ -1,5 +1,9 @@
-export function formatDateTime(ts: number): string {
-  return new Date(ts).toLocaleString('pt-BR', {
+export function formatDateTime(
+  ts: number,
+  lang: 'pt-BR' | 'es' | 'en' = 'pt-BR'
+): string {
+  const locale = lang === 'es' ? 'es-ES' : lang === 'en' ? 'en-US' : 'pt-BR';
+  return new Date(ts).toLocaleString(locale, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

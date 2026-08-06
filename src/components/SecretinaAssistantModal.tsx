@@ -42,6 +42,17 @@ import {
   getSecretinaLanguage,
   yesNoHint,
 } from '@/services/secretinaLanguage';
+import {
+  msgByeAfterSchedule,
+  msgMicStartFail,
+  msgNoSpeechHeard,
+  msgPickNotUnderstood,
+  msgProcessFailSpeak,
+  msgRepeatContactName,
+  msgScheduleMissingForNote,
+  msgScheduleNoteSaved,
+  unnamedContact,
+} from '@/services/secretinaSpeak';
 import { formatDateTime } from '@/utils/date';
 import type { Contact } from '@/types';
 import { useI18n } from '@/i18n';
@@ -267,14 +278,15 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       abortSpeechRecognition();
       setMicBusy(true);
       setPhaseSafe('listening');
+      const lang = await getSecretinaLanguage();
       const hint =
         mode === 'pick_contact'
-          ? 'Pode dizer o contacto…'
+          ? t('assistant.listening.pick')
           : mode === 'ask_schedule_note'
-            ? 'Sim / No / Yes…'
+            ? yesNoHint(lang)
             : mode === 'dictate_schedule_note'
-              ? 'Microfone activo — dite a nota'
-              : 'Microfone activo — fale agora';
+              ? t('assistant.listening.dictate')
+              : t('assistant.listening.command');
       setLiveTranscript(hint);
       liveTranscriptRef.current = '';
       await prepareMicForRecognition();
@@ -290,11 +302,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         setMicBusy(false);
         setPhaseSafe('error');
         setErrorMsg(
-          e instanceof Error ? e.message : 'Não foi possível iniciar a voz.'
+          e instanceof Error ? e.message : msgMicStartFail(await getSecretinaLanguage())
         );
       }
     },
-    [setMicBusy, setPhaseSafe]
+    [setMicBusy, setPhaseSafe, t]
   );
 
   const applyOutcome = useCallback(
@@ -425,9 +437,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             if (!heard) {
               setMicBusy(false);
               setPhaseSafe('error');
-              setErrorMsg(
-                'Não consegui iniciar a voz. Tente de novo ou use o botão da nota.'
-              );
+              setErrorMsg(msgMicStartFail(await getSecretinaLanguage()));
               return;
             }
             await new Promise((r) => setTimeout(r, 500));
@@ -435,16 +445,17 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             return;
           }
           if (isSpokenNo(trimmed, await getSecretinaLanguage())) {
+            const lang = await getSecretinaLanguage();
             const r = resultRef.current;
             const when =
               r?.ok && r.scheduledAt != null
-                ? formatDateTime(r.scheduledAt)
+                ? formatDateTime(r.scheduledAt, lang)
                 : '';
             const name =
-              r?.ok && r.contact?.name ? r.contact.name : 'o contacto';
-            const bye = when
-              ? `Combinado. A ligação com ${name} fica para ${when}. Até logo.`
-              : `Combinado. Agendamento guardado. Até logo.`;
+              r?.ok && r.contact?.name
+                ? r.contact.name
+                : unnamedContact(lang);
+            const bye = msgByeAfterSchedule(lang, name, when);
             setMicBusy(false);
             setPhaseSafe('done');
             listenModeRef.current = 'command';
@@ -475,10 +486,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
               ? current.scheduledId
               : undefined;
           if (!scheduledId) {
+            const lang = await getSecretinaLanguage();
             setMicBusy(false);
             setPhaseSafe('error');
-            setErrorMsg('Agendamento não encontrado para guardar a nota.');
-            await speakThen('Não encontrei o agendamento para guardar a nota.');
+            setErrorMsg(msgScheduleMissingForNote(lang));
+            await speakThen(msgScheduleMissingForNote(lang));
             return;
           }
           const saved = await updateScheduledCallNote(scheduledId, trimmed);
@@ -499,7 +511,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
           setMicBusy(false);
           listenModeRef.current = 'command';
           setPhaseSafe('done');
-          await speakThen('Nota do agendamento guardada. Até logo.');
+          await speakThen(msgScheduleNoteSaved(await getSecretinaLanguage()));
           setPhaseSafe('done');
         } finally {
           processingRef.current = false;
@@ -521,9 +533,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         if (!picked) {
           clearSilenceTimer();
           liveTranscriptRef.current = '';
-          await speakThen(
-            'Não entendi. Diga o número da lista, por exemplo 1 ou 2, ou o sobrenome.'
-          );
+          await speakThen(msgPickNotUnderstood(await getSecretinaLanguage()));
           await openMicForMode('pick_contact');
           return;
         }
@@ -560,12 +570,10 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         setErrorMsg(
           e instanceof Error
             ? e.message
-            : 'Falha ao processar. Toque em Falar agora.'
+            : msgProcessFailSpeak(await getSecretinaLanguage())
         );
         try {
-          await speakThen(
-            'Tive um problema a processar. Pode repetir o pedido?'
-          );
+          await speakThen(msgProcessFailSpeak(await getSecretinaLanguage()));
           await openMicForMode('command');
         } catch {
           setMicBusy(false);
@@ -658,7 +666,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     if (listenModeRef.current === 'pick_contact') {
       // Mantém lista aberta e tenta ouvir de novo
       void (async () => {
-        await speakThen('Pode repetir o nome do contacto?');
+        await speakThen(msgRepeatContactName(await getSecretinaLanguage()));
         await openMicForMode('pick_contact');
       })();
       return;
@@ -683,11 +691,14 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     clearSilenceTimer();
     setMicBusy(false);
     setPhaseSafe('error');
-    setErrorMsg(
-      event.error === 'no-speech' || event.error === 'speech-timeout'
-        ? 'Não ouvi nada. Toque em Falar de novo, fale perto do telemóvel, ou digite o comando.'
-        : event.message || 'Erro no reconhecimento de voz.'
-    );
+    void (async () => {
+      const lang = await getSecretinaLanguage();
+      setErrorMsg(
+        event.error === 'no-speech' || event.error === 'speech-timeout'
+          ? msgNoSpeechHeard(lang)
+          : event.message || msgMicStartFail(lang)
+      );
+    })();
   });
 
   const startListening = async (opts?: {
@@ -717,9 +728,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     if (!perm.granted) {
       setMicBusy(false);
       setPhaseSafe('error');
-      setErrorMsg(
-        'Permita microfone e reconhecimento de voz nas definições do SeCretina.'
-      );
+      setErrorMsg(msgMicStartFail(await getSecretinaLanguage()));
       return;
     }
 
@@ -771,9 +780,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     } else {
       setMicBusy(false);
       setPhaseSafe('error');
-      setErrorMsg(
-        'Não captou voz. Fale de novo ou digite o comando abaixo e toque em Executar texto.'
-      );
+      void getSecretinaLanguage().then((lang) => {
+        setErrorMsg(msgNoSpeechHeard(lang));
+      });
     }
   };
 
@@ -803,7 +812,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     };
     setResult(next);
     resultRef.current = next;
-    void speakText('Nota do agendamento guardada. Até logo.');
+    void (async () => {
+      await speakText(msgScheduleNoteSaved(await getSecretinaLanguage()));
+    })();
   };
 
   return (

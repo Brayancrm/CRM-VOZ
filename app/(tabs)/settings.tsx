@@ -64,6 +64,7 @@ import {
   setSecretinaLanguage,
   type SecretinaLanguage,
 } from '@/services/secretinaLanguage';
+import { wakeGreetingWord } from '@/services/secretinaSpeak';
 
 export default function SettingsScreen() {
   const { support, isListening, restartDetection, lastPhoneEvent } =
@@ -428,8 +429,8 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>Chamamento por voz</Text>
           <Text style={styles.body}>
-            Com o app aberto, diga «Olá {wakeName}». Ela responde «Pode falar» e
-            abre o microfone. Não funciona com o ecrã bloqueado.
+            Com o app aberto, diga «{wakeGreetingWord(lang)} {wakeName}». Ela
+            responde e abre o microfone. Não funciona com o ecrã bloqueado.
           </Text>
           <Text style={styles.label}>Nome de chamamento</Text>
           <TextInput
@@ -445,9 +446,10 @@ export default function SettingsScreen() {
             onPress={async () => {
               await setWakeName(wakeNameInput);
               await refreshWakeName();
+              const name = await getWakeName();
               Alert.alert(
                 'Chamamento',
-                `Agora diga «Olá ${(await getWakeName())}».`
+                `Agora diga «${wakeGreetingWord(lang)} ${name}».`
               );
             }}
             style={styles.mt}
@@ -463,8 +465,8 @@ export default function SettingsScreen() {
           <Button
             title={
               wakeEnabled
-                ? `Desactivar «Olá ${wakeName}»`
-                : `Activar «Olá ${wakeName}»`
+                ? `Desactivar «${wakeGreetingWord(lang)} ${wakeName}»`
+                : `Activar «${wakeGreetingWord(lang)} ${wakeName}»`
             }
             onPress={async () => {
               try {
@@ -472,7 +474,7 @@ export default function SettingsScreen() {
                 Alert.alert(
                   'Chamamento',
                   !wakeEnabled
-                    ? `Activo. Diga «Olá ${wakeName}» com o app aberto.`
+                    ? `Activo. Diga «${wakeGreetingWord(lang)} ${wakeName}» com o app aberto.`
                     : 'Desactivado.'
                 );
               } catch (e) {

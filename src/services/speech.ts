@@ -8,6 +8,7 @@ import {
   stopOpenAiTts,
 } from '@/services/openaiTts';
 import { isOpenAiProxyConfigured } from '@/services/openaiProxy';
+import { getSpeechLocale } from '@/services/secretinaLanguage';
 
 export { prefetchPodeFalar };
 
@@ -51,23 +52,29 @@ async function prepareAudioModeForSpeech(): Promise<void> {
   }
 }
 
-async function pickSpeechVoice(): Promise<{ language?: string; voice?: string }> {
+async function pickSpeechVoice(
+  localeHint?: string
+): Promise<{ language?: string; voice?: string }> {
+  const preferred = (localeHint || 'pt-BR').toLowerCase();
+  const prefix = preferred.split('-')[0]; // pt | es | en
   try {
     const voices = await Speech.getAvailableVoicesAsync();
-    const ptBr = voices.find((v) =>
-      v.language?.toLowerCase().startsWith('pt-br')
+    const exact = voices.find((v) =>
+      v.language?.toLowerCase().startsWith(preferred)
     );
-    if (ptBr?.identifier) {
-      return { language: ptBr.language, voice: ptBr.identifier };
+    if (exact?.identifier) {
+      return { language: exact.language, voice: exact.identifier };
     }
-    const pt = voices.find((v) => v.language?.toLowerCase().startsWith('pt'));
-    if (pt?.identifier) {
-      return { language: pt.language, voice: pt.identifier };
+    const byLang = voices.find((v) =>
+      v.language?.toLowerCase().startsWith(prefix)
+    );
+    if (byLang?.identifier) {
+      return { language: byLang.language, voice: byLang.identifier };
     }
   } catch {
     /* vozes opcionais */
   }
-  return { language: 'pt-BR' };
+  return { language: localeHint || 'pt-BR' };
 }
 
 function speakChunk(
@@ -119,7 +126,8 @@ async function speakLocal(text: string, generation: number): Promise<boolean> {
   if (Platform.OS === 'android') {
     await new Promise((r) => setTimeout(r, 280));
   }
-  const voiceOpts = await pickSpeechVoice();
+  const locale = await getSpeechLocale();
+  const voiceOpts = await pickSpeechVoice(locale);
   const chunks = splitForTts(text);
   let any = false;
   for (const chunk of chunks) {

@@ -252,39 +252,43 @@ function buildInterpretSystemPrompt(nowIso, nowLabel, contactNames, language) {
         ? 'English'
         : 'português brasileiro (pt-BR)';
 
-  return `És a assistente SeCretina de um CRM de ligações.
-Idioma da conversa: ${langName}. Responde em reply/clarification NESSE idioma.
-Extrai acções a partir do que o utilizador disse. Pode haver VÁRIAS acções no mesmo pedido.
+  return `You are SeCretina, a CRM call assistant.
+Conversation language: ${langName}.
+CRITICAL: Every "reply" and "clarification" MUST be written entirely in ${langName}. Never mix languages. Do not use Portuguese unless the language is Portuguese.
+Contact names and note bodies stay as spoken by the user (do not translate names or saved note text).
+When listing options, enumerate in ${langName} (e.g. "option 1", "opción 1", "opção 1").
 
-Data/hora actual: ${nowIso} (${nowLabel})
-Fuso: use a data/hora local implícita do utilizador; quandoIso em ISO 8601 com offset local se possível, senão UTC.
+Extract actions from what the user said. There may be SEVERAL actions in one request.
 
-Contactos conhecidos (use o nome mais próximo):
-${contactNames.length ? contactNames.join(', ') : '(lista vazia)'}
+Current date/time: ${nowIso} (${nowLabel})
+Timezone: use the user's implied local time; whenIso in ISO 8601 with local offset if possible, else UTC.
 
-Responde APENAS JSON válido com este formato:
+Known contacts (use the closest name):
+${contactNames.length ? contactNames.join(', ') : '(empty list)'}
+
+Respond with ONLY valid JSON in this format:
 {
   "actions": [
-    { "type": "note", "contactQuery": "Nome", "noteBody": "texto da nota" },
-    { "type": "schedule", "contactQuery": "Nome", "whenIso": "2026-08-01T15:00:00", "whenRaw": "amanhã às 15", "note": "opcional" },
-    { "type": "list_agenda", "contactQuery": "opcional", "whenRaw": "hoje|amanhã|segunda|esta semana|próximos", "searchText": "opcional" },
-    { "type": "cancel_schedule", "contactQuery": "Nome", "whenRaw": "opcional amanhã/hoje" },
-    { "type": "reschedule", "contactQuery": "Nome", "fromWhenRaw": "opcional", "whenIso": "…", "whenRaw": "quinta às 10" }
+    { "type": "note", "contactQuery": "Name", "noteBody": "note text" },
+    { "type": "schedule", "contactQuery": "Name", "whenIso": "2026-08-01T15:00:00", "whenRaw": "tomorrow at 3", "note": "optional" },
+    { "type": "list_agenda", "contactQuery": "optional", "whenRaw": "today|tomorrow|monday|this week|upcoming", "searchText": "optional" },
+    { "type": "cancel_schedule", "contactQuery": "Name", "whenRaw": "optional tomorrow/today" },
+    { "type": "reschedule", "contactQuery": "Name", "fromWhenRaw": "optional", "whenIso": "…", "whenRaw": "Thursday at 10" }
   ],
-  "reply": "frase curta para dizer em voz alta ao utilizador (no idioma ${langName})",
-  "clarification": "se faltar info crítica, pergunta aqui no idioma ${langName}; senão omita ou null"
+  "reply": "short phrase to speak aloud in ${langName}",
+  "clarification": "if critical info is missing, ask here in ${langName}; otherwise omit or null"
 }
 
-Regras:
-- Criar nota → type note (noteBody obrigatório).
-- Criar agendamento novo → type schedule (whenIso ou whenRaw; horário futuro).
-- Consultar/pesquisar agenda → type list_agenda (não inventes itens; o app lista).
-- Cancelar/desmarcar → type cancel_schedule.
-- Mover/remarcar/reagendar existente → type reschedule (nova data em whenIso/whenRaw).
-- contactQuery = nome como dito.
-- Se pedir criar agenda E nota → schedule + note.
-- Se não for nota/agenda, actions=[] e clarification com ajuda.
-- Sem markdown, só JSON.`;
+Rules:
+- Create note → type note (noteBody required).
+- Create new appointment → type schedule (whenIso or whenRaw; future time).
+- Query/search agenda → type list_agenda (do not invent items; the app lists them).
+- Cancel → type cancel_schedule.
+- Move/reschedule existing → type reschedule (new date in whenIso/whenRaw).
+- contactQuery = name as spoken.
+- If user asks to create schedule AND note → schedule + note.
+- If not note/agenda, actions=[] and clarification with help in ${langName}.
+- No markdown, JSON only.`;
 }
 
 app.get('/health', (_req, res) => {
