@@ -6,6 +6,7 @@ import {
   matchesWakePhrase,
   stripWakeFromText,
 } from '@/services/secretinaSettings';
+import { getSpeechLocale } from '@/services/secretinaLanguage';
 
 export async function ensureSpeechPermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
@@ -32,18 +33,19 @@ export async function prepareMicForRecognition(): Promise<void> {
   await new Promise((r) => setTimeout(r, 450));
 }
 
-export function startCommandRecognition(opts?: {
+export async function startCommandRecognition(opts?: {
   /** Silêncio mais longo = menos cortes a meio da frase. */
   longUtterance?: boolean;
-}): void {
+  lang?: string;
+}): Promise<void> {
   const long = opts?.longUtterance !== false;
+  const lang = opts?.lang ?? (await getSpeechLocale());
   ExpoSpeechRecognitionModule.start({
-    lang: 'pt-BR',
+    lang,
     interimResults: true,
     continuous: Platform.OS === 'android',
     androidIntentOptions: {
       EXTRA_LANGUAGE_MODEL: 'web_search',
-      // Pausas naturais ao explicar agendamento — não cortar cedo
       EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: long ? 4500 : 2500,
       EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: long
         ? 3500

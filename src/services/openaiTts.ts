@@ -9,11 +9,15 @@ import {
   getOpenAiTtsVoice,
   getVoiceGender,
 } from '@/services/secretinaSettings';
+import {
+  getCanSpeakPhrase,
+  getSecretinaLanguage,
+} from '@/services/secretinaLanguage';
 
 let currentSound: Audio.Sound | null = null;
 
-/** Cache do «Pode falar» por voz — evita atraso/travão no wake. */
-const greetFileByVoice: Record<string, string> = {};
+/** Cache do cumprimento por voz+idioma. */
+const greetFileByKey: Record<string, string> = {};
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chars =
@@ -71,6 +75,7 @@ async function fetchSpeechMp3(
   if (!baseUrl) return null;
 
   const gender = await getVoiceGender();
+  const language = await getSecretinaLanguage();
   const headers = {
     'Content-Type': 'application/json',
     ...(await openAiProxyAuthHeaders()),
@@ -88,6 +93,7 @@ async function fetchSpeechMp3(
           text: text.slice(0, 4000),
           voice,
           gender,
+          language,
         }),
         signal: ctrl.signal,
       });
@@ -188,14 +194,20 @@ export async function speakWithOpenAiTts(text: string): Promise<boolean> {
   if (!baseUrl) return false;
 
   const voice = await getOpenAiTtsVoice();
-  const isGreet = /^pode falar\.?$/i.test(trimmed);
+  const language = await getSecretinaLanguage();
+  const greet = await getCanSpeakPhrase();
+  const cacheKey = `${voice}:${language}`;
+  const isGreet =
+    normalizeGreet(trimmed) === normalizeGreet(greet) ||
+    /^pode falar\.?$/i.test(trimmed) ||
+    /^puede hablar\.?$/i.test(trimmed) ||
+    /^you can speak\.?$/i.test(trimmed);
 
-  // Cache do cumprimento — resposta imediata no wake
-  if (isGreet && greetFileByVoice[voice]) {
+  if (isGreet && greetFileByKey[cacheKey]) {
     try {
-      const info = await FileSystem.getInfoAsync(greetFileByVoice[voice]);
+      const info = await FileSystem.getInfoAsync(greetFileByKey[cacheKey]);
       if (info.exists) {
-        const played = await playMp3File(greetFileByVoice[voice]);
+        const played = await playMp3File(greetFileByKey[cacheKey]);
         if (played) return true;
       }
     } catch {
@@ -206,11 +218,11 @@ export async function speakWithOpenAiTts(text: string): Promise<boolean> {
   const bytes = await fetchSpeechMp3(trimmed, voice);
   if (!bytes) return false;
 
-  const path = await writeMp3File(bytes, voice);
+  const path = await writeMp3File(bytes, `${voice}-${language}`);
   if (!path) return false;
 
   if (isGreet) {
-    greetFileByVoice[voice] = path;
+    greetFileByKey[cacheKey] = path;
   }
 
   try {
@@ -229,21 +241,28 @@ export async function speakWithOpenAiTts(text: string): Promise<boolean> {
   }
 }
 
-/** Pré-aquece o «Pode falar» em background (chamar ao guardar URL/voz). */
+function normalizeGreet(s: string): string {
+  return s.trim().toLowerCase().replace(/\.+$/, '');
+}
+
+/** Pré-aquece o cumprimento em background. */
 export async function prefetchPodeFalar(): Promise<void> {
   const baseUrl = await getOpenAiProxyBaseUrl();
   if (!baseUrl) return;
   const voice = await getOpenAiTtsVoice();
-  if (greetFileByVoice[voice]) {
+  const language = await getSecretinaLanguage();
+  const cacheKey = `${voice}:${language}`;
+  if (greetFileByKey[cacheKey]) {
     try {
-      const info = await FileSystem.getInfoAsync(greetFileByVoice[voice]);
+      const info = await FileSystem.getInfoAsync(greetFileByKey[cacheKey]);
       if (info.exists) return;
     } catch {
       /* continue */
     }
   }
-  const bytes = await fetchSpeechMp3('Pode falar.', voice);
+  const phrase = await getCanSpeakPhrase();
+  const bytes = await fetchSpeechMp3(phrase, voice);
   if (!bytes) return;
-  const path = await writeMp3File(bytes, `greet-${voice}`);
-  if (path) greetFileByVoice[voice] = path;
+  const path = await writeMp3File(bytes, `greet-${voice}-${language}`);
+  if (path) greetFileByKey[cacheKey] = path;
 }

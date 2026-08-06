@@ -9,9 +9,11 @@ import { SecretinaAssistantProvider } from '@/context/SecretinaAssistantContext'
 import { ThemeProvider, useColors, useTheme } from '@/context/ThemeContext';
 import { ThemeToggleButton } from '@/components/ThemeToggleButton';
 import { PermissionsGate } from '@/components/PermissionsGate';
+import { I18nProvider, useI18n } from '@/i18n';
 
 function WebBanner() {
   const colors = useColors();
+  const { t } = useI18n();
   if (Platform.OS !== 'web') return null;
   return (
     <View
@@ -22,7 +24,7 @@ function WebBanner() {
       }}
     >
       <Text style={{ fontSize: 12, color: colors.text, textAlign: 'center' }}>
-        Versão web (preview). No celular use o app SeCretina instalado.
+        {t('web.banner')}
       </Text>
     </View>
   );
@@ -31,6 +33,7 @@ function WebBanner() {
 function RootNavigator() {
   const colors = useColors();
   const { isDark } = useTheme();
+  const { t } = useI18n();
 
   return (
     <>
@@ -48,19 +51,19 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="contact/[id]"
-          options={{ title: 'Contato', presentation: 'card' }}
+          options={{ title: t('stack.contact'), presentation: 'card' }}
         />
         <Stack.Screen
           name="contact/new"
-          options={{ title: 'Novo contato', presentation: 'modal' }}
+          options={{ title: t('stack.newContact'), presentation: 'modal' }}
         />
         <Stack.Screen
           name="contact/edit/[id]"
-          options={{ title: 'Editar contato', presentation: 'modal' }}
+          options={{ title: t('stack.editContact'), presentation: 'modal' }}
         />
         <Stack.Screen
           name="post-call/[sessionId]"
-          options={{ title: 'Pós-chamada', presentation: 'modal' }}
+          options={{ title: t('stack.postCall'), presentation: 'modal' }}
         />
       </Stack>
     </>
@@ -71,13 +74,15 @@ export default function RootLayout() {
   return (
     <DatabaseProvider>
       <ThemeProvider>
-        <PermissionsGate>
-          <CallDetectionProvider>
-            <SecretinaAssistantProvider>
-              <RootNavigator />
-            </SecretinaAssistantProvider>
-          </CallDetectionProvider>
-        </PermissionsGate>
+        <I18nProvider>
+          <PermissionsGate>
+            <CallDetectionProvider>
+              <SecretinaAssistantProvider>
+                <RootNavigator />
+              </SecretinaAssistantProvider>
+            </CallDetectionProvider>
+          </PermissionsGate>
+        </I18nProvider>
       </ThemeProvider>
     </DatabaseProvider>
   );

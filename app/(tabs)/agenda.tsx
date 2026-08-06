@@ -59,13 +59,15 @@ import { AgendaScheduledCard } from '@/components/AgendaScheduledCard';
 import { AgendaDeviceEventCard } from '@/components/AgendaDeviceEventCard';
 import { Button } from '@/components/ui/Button';
 import { syncDeviceCalendarReminders } from '@/services/deviceCalendarReminders';
+import { useI18n } from '@/i18n';
+import type { PtBRKey } from '@/i18n/locales/pt-BR';
 
-const filters: { key: AgendaFilter; label: string }[] = [
-  { key: 'upcoming', label: '2 anos' },
-  { key: 'day', label: 'Dia' },
-  { key: 'month', label: 'Mês' },
-  { key: 'week', label: 'Semana' },
-  { key: 'next7', label: '7 dias (sáb→sex)' },
+const FILTER_KEYS: { key: AgendaFilter; labelKey: PtBRKey }[] = [
+  { key: 'upcoming', labelKey: 'agenda.filter.upcoming' },
+  { key: 'day', labelKey: 'agenda.filter.day' },
+  { key: 'month', labelKey: 'agenda.filter.month' },
+  { key: 'week', labelKey: 'agenda.filter.week' },
+  { key: 'next7', labelKey: 'agenda.filter.next7' },
 ];
 
 function rangeForFilter(
@@ -91,6 +93,7 @@ type Section = { title: string; data: AgendaItem[] };
 export default function AgendaScreen() {
   const router = useRouter();
   const colors = useColors();
+  const { t } = useI18n();
   const styles = useThemedStyles((c) => ({
     container: { flex: 1, padding: 16, backgroundColor: c.bg },
     search: {
@@ -363,7 +366,7 @@ export default function AgendaScreen() {
           <>
             <View style={styles.filtersWrap}>
               <View style={styles.filtersRow}>
-                {filters.slice(0, 3).map((f) => (
+                {FILTER_KEYS.slice(0, 3).map((f) => (
                   <Pressable
                     key={f.key}
                     style={[styles.chip, filter === f.key && styles.chipActive]}
@@ -375,13 +378,13 @@ export default function AgendaScreen() {
                         filter === f.key && styles.chipTextActive,
                       ]}
                     >
-                      {f.label}
+                      {t(f.labelKey)}
                     </Text>
                   </Pressable>
                 ))}
               </View>
               <View style={styles.filtersRow}>
-                {filters.slice(3).map((f) => (
+                {FILTER_KEYS.slice(3).map((f) => (
                   <Pressable
                     key={f.key}
                     style={[styles.chip, filter === f.key && styles.chipActive]}
@@ -393,7 +396,7 @@ export default function AgendaScreen() {
                         filter === f.key && styles.chipTextActive,
                       ]}
                     >
-                      {f.label}
+                      {t(f.labelKey)}
                     </Text>
                   </Pressable>
                 ))}
@@ -408,7 +411,7 @@ export default function AgendaScreen() {
 
             <TextInput
               style={styles.search}
-              placeholder="Buscar contato, nota ou evento…"
+              placeholder={t('agenda.search.placeholder')}
               placeholderTextColor={colors.textMuted}
               value={search}
               onChangeText={setSearch}
@@ -420,13 +423,12 @@ export default function AgendaScreen() {
                 onPress={() => setSearch('')}
                 style={styles.clearSearch}
               >
-                <Text style={styles.clearSearchText}>Limpar busca</Text>
+                <Text style={styles.clearSearchText}>
+                  {t('agenda.search.clear')}
+                </Text>
               </Pressable>
             ) : (
-              <Text style={styles.searchHint}>
-                Nome, telefone, nota do agendamento ou título do calendário do
-                celular.
-              </Text>
+              <Text style={styles.searchHint}>{t('agenda.search.hint')}</Text>
             )}
 
             {calendarHint ? (
@@ -448,24 +450,13 @@ export default function AgendaScreen() {
           <View style={styles.emptyBox}>
             <Text style={styles.empty}>
               {searchActive
-                ? 'Nenhum compromisso corresponde à busca.'
-                : filter === 'day'
-                  ? 'Nenhum compromisso neste dia.'
-                  : 'Nenhum compromisso neste período.'}
+                ? t('agenda.empty.search')
+                : t('agenda.empty.period')}
             </Text>
             {searchActive ? (
-              <Text style={styles.emptyHint}>
-                Tente outra palavra ou limpe a busca para ver todos do período.
-              </Text>
-            ) : filter !== 'day' ? (
-              <Text style={styles.emptyHint}>
-                Ligações atrasadas do app aparecem no topo. Eventos do Google
-                Calendar / Samsung aparecem com etiqueta CELULAR.
-              </Text>
+              <Text style={styles.emptyHint}>{t('agenda.empty.hint')}</Text>
             ) : (
-              <Text style={styles.emptyHint}>
-                Escolha outra data ou agende na ficha do contato.
-              </Text>
+              <Text style={styles.emptyHint}>{t('agenda.empty.hint')}</Text>
             )}
           </View>
         }

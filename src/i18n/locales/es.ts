@@ -1,0 +1,147 @@
+import type { PtBRKey } from './pt-BR';
+
+/** Español — mesmas keys que pt-BR. */
+export const es: Record<PtBRKey, string> = {
+  'tabs.contacts': 'Contactos',
+  'tabs.agenda': 'Agenda',
+  'tabs.settings': 'Ajustes',
+  'tabs.settingsHeader': 'SeCretina',
+
+  'stack.contact': 'Contacto',
+  'stack.newContact': 'Nuevo contacto',
+  'stack.editContact': 'Editar contacto',
+  'stack.postCall': 'Después de la llamada',
+  'web.banner':
+    'Versión web (vista previa). En el móvil use la app SeCretina instalada.',
+
+  'onboarding.title': 'Configurar SeCretina',
+  'onboarding.lead':
+    'Primero el idioma de la asistente; después cada permiso y por qué lo pedimos. Autorice uno a uno — la app se abre cuando todo esté listo.',
+  'onboarding.progress': '{granted} de {total} listas · {current}/{total}',
+  'onboarding.slide.language.title': 'Idioma de SeCretina',
+  'onboarding.slide.language.why':
+    'Elija el idioma en el que la asistente habla y en el que usted responde por voz. Los textos de la app pasan a este idioma.',
+  'onboarding.slide.mic.title': 'Micrófono',
+  'onboarding.slide.mic.why':
+    'Necesitamos el micrófono para oír el llamamiento («Hola…»), grabar notas por voz y los comandos de la asistente.',
+  'onboarding.slide.notifications.title': 'Notificaciones',
+  'onboarding.slide.notifications.why':
+    'Usamos notificaciones para recordar llamadas agendadas y avisar cuando una nota está lista.',
+  'onboarding.slide.phone.title': 'Teléfono y registro',
+  'onboarding.slide.phone.why':
+    'Detecta cuándo empieza o termina la llamada e identifica el número para abrir la nota del contacto correcto.',
+  'onboarding.slide.contacts.title': 'Contactos',
+  'onboarding.slide.contacts.why':
+    'Sirve para importar y reconocer nombres y teléfonos, para que la asistente sepa «para quién» es la nota o la cita.',
+  'onboarding.slide.calendar.title': 'Calendario',
+  'onboarding.slide.calendar.why':
+    'Muestra eventos del móvil junto con la agenda de SeCretina y permite crear recordatorios.',
+  'onboarding.slide.battery.title': 'Batería sin restricciones',
+  'onboarding.slide.battery.why':
+    'En Samsung y otros Android, el ahorro de batería puede detener la detección de llamadas. Sin restricciones, SeCretina sigue en segundo plano.',
+  'onboarding.status.ok': 'Autorizado ✓',
+  'onboarding.status.pending': 'Pendiente — toque en Permitir',
+  'onboarding.cta.continueLanguage': 'Continuar con este idioma',
+  'onboarding.cta.next': 'Siguiente',
+  'onboarding.cta.finish': 'Finalizar',
+  'onboarding.cta.allow': 'Permitir {title}',
+  'onboarding.cta.wait': 'Espere…',
+  'onboarding.cta.openSettings': 'Abrir ajustes de Android',
+  'onboarding.footer.language': 'Podrá cambiar el idioma más tarde en Ajustes.',
+  'onboarding.footer.permission':
+    'Si Android muestra «No permitir», use «Abrir ajustes» y actívelo manualmente.',
+  'onboarding.error.read':
+    'Error al leer permisos. Deslice y toque en Permitir.',
+  'onboarding.error.saveLanguage': 'No se pudo guardar el idioma.',
+  'onboarding.error.request': 'Error al pedir permiso.',
+
+  'contacts.search.placeholder': 'Buscar contacto, nota o transcripción…',
+  'contacts.search.hintMin': 'Escriba al menos 2 letras para buscar.',
+  'contacts.search.hintActive': 'Buscando en nombres, notas y transcripciones.',
+  'contacts.section.contacts': 'Contactos',
+  'contacts.section.notes': 'En notas y transcripciones',
+  'contacts.action.new': '+ Nuevo',
+  'contacts.action.import': 'Importar',
+  'contacts.action.talk': 'Hablar con SeCretina',
+  'contacts.wake.listening': 'Escuchando «Hola {name}»…',
+  'contacts.wake.active': '«Hola {name}» activo — diga el nombre para abrir.',
+  'contacts.wake.disabled':
+    'Active el llamamiento en Ajustes para hablar sin tocar.',
+  'contacts.empty.search': 'Ningún resultado para esta búsqueda.',
+  'contacts.empty.default': 'Ningún contacto. Toque en + Nuevo o Importar.',
+  'contacts.note.transcription': '· transcripción',
+  'contacts.alert.webTitle': 'Solo en el móvil',
+  'contacts.alert.webBody':
+    'La importación de contactos funciona en la app Android.',
+  'contacts.alert.importTitle': 'Importar',
+  'contacts.alert.importCount': '{count} contacto(s) importado(s).',
+  'contacts.alert.importError': 'No se pudo importar.',
+
+  'agenda.filter.upcoming': '2 años',
+  'agenda.filter.day': 'Día',
+  'agenda.filter.month': 'Mes',
+  'agenda.filter.week': 'Semana',
+  'agenda.filter.next7': '7 días',
+  'agenda.search.placeholder': 'Buscar en la agenda…',
+  'agenda.search.hint': 'Nombre, nota o fecha.',
+  'agenda.search.clear': 'Limpiar',
+  'agenda.empty.search': 'Nada encontrado en esta búsqueda.',
+  'agenda.empty.period': 'Sin citas en este período.',
+  'agenda.empty.hint':
+    'Use SeCretina o la ficha del contacto para agendar.',
+  'agenda.section.overdue': 'Atrasados — reagende o complete',
+  'agenda.section.inPeriod': 'En este período',
+  'agenda.cta.view': 'Ver agenda',
+
+  'settings.about.title': 'Acerca de SeCretina',
+  'settings.about.body':
+    'CRM sencillo: tras cada llamada, identifica el contacto y abre una nota. Use el llamamiento por voz o «Hablar con SeCretina».',
+  'settings.voice.title': 'Voz de SeCretina',
+  'settings.voice.body':
+    'Elija el timbre de la asistente. La voz natural y la interpretación usan el servidor de la app.',
+  'settings.voice.timbre': 'Timbre (voz natural)',
+  'settings.voice.female': 'Femenina (Coral)',
+  'settings.voice.male': 'Masculina (Ash)',
+  'settings.voice.test': 'Probar voz',
+  'settings.voice.alertTitle': 'Voz',
+  'settings.voice.alertNoPlay':
+    'No oí la reproducción. Confirme internet y el volumen del móvil.',
+  'settings.language.title': 'Idioma',
+  'settings.language.body':
+    'Idioma de la interfaz, la voz y los comandos. Los nombres de contactos y las notas ya guardadas no cambian.',
+  'settings.language.saved': 'Idioma actualizado.',
+
+  'assistant.title': 'Hablar con SeCretina',
+  'assistant.subtitle':
+    'Diga «Hola {name}» o use el botón.\nEj.: «qué tengo mañana», «cancela lo de María», «agenda con Ana mañana a las 15»',
+  'assistant.phase.speaking': 'Hablando…',
+  'assistant.phase.processing': 'Procesando…',
+  'assistant.listening.command': 'Micrófono activo — diga el comando',
+  'assistant.listening.pick': 'Micrófono activo — diga el número o el apellido',
+  'assistant.listening.yesNo': 'Sí / No / Yes…',
+  'assistant.listening.dictate': 'Micrófono activo — dicte la nota de la cita',
+  'assistant.label.note': 'Nota',
+  'assistant.label.scheduleNote': 'Nota de la cita',
+  'assistant.label.askScheduleNote': '¿Quiere añadir una nota a esta cita?',
+  'assistant.label.typed': 'O escriba / confirme el comando',
+  'assistant.label.pickContact': 'Elija el contacto — diga el número o toque',
+  'assistant.savedInAgenda': 'Guardado en la Agenda de la app.',
+  'assistant.cta.stop': 'Parar y ejecutar',
+  'assistant.cta.speakNow': 'Hablar ahora',
+  'assistant.cta.wait': 'Espere…',
+  'assistant.cta.runText': 'Ejecutar texto',
+  'assistant.cta.close': 'Cerrar',
+  'assistant.cta.viewAgenda': 'Ver agenda',
+  'assistant.cta.openContact': 'Abrir {name}',
+  'assistant.cta.dictateNote': 'Dictar nota de la cita',
+  'assistant.placeholder.command': 'agenda con Paulo Silva mañana a las 15…',
+  'assistant.unnamed': 'Sin nombre',
+  'assistant.webOnly.title': 'Solo en el móvil',
+  'assistant.webOnly.body':
+    'El reconocimiento de voz de SeCretina funciona en la app Android.',
+
+  'common.save': 'Guardar',
+  'common.cancel': 'Cancelar',
+  'common.error': 'Error',
+  'common.ok': 'OK',
+};

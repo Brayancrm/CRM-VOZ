@@ -36,8 +36,15 @@ import { matchContactBySpokenName } from '@/utils/secretinaCommand';
 import { normalizeSpoken } from '@/utils/normalizeSpoken';
 import { parseSpokenChoiceIndex } from '@/utils/contactChoice';
 import { isSpokenNo, isSpokenYes } from '@/utils/spokenYesNo';
+import {
+  askScheduleNotePhrase,
+  getCanSpeakPhrase,
+  getSecretinaLanguage,
+  yesNoHint,
+} from '@/services/secretinaLanguage';
 import { formatDateTime } from '@/utils/date';
 import type { Contact } from '@/types';
+import { useI18n } from '@/i18n';
 
 type Phase = 'idle' | 'speaking' | 'listening' | 'processing' | 'done' | 'error';
 type ListenMode =
@@ -60,6 +67,7 @@ type Props = {
 
 export function SecretinaAssistantModal({ visible, onClose }: Props) {
   const router = useRouter();
+  const { t } = useI18n();
   const { height: windowHeight } = useWindowDimensions();
   const {
     setMicBusy,
@@ -263,7 +271,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         mode === 'pick_contact'
           ? 'Pode dizer o contacto…'
           : mode === 'ask_schedule_note'
-            ? 'Diga sim ou não…'
+            ? 'Sim / No / Yes…'
             : mode === 'dictate_schedule_note'
               ? 'Microfone activo — dite a nota'
               : 'Microfone activo — fale agora';
@@ -274,7 +282,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       if (phaseRef.current !== 'listening' || speakingLockRef.current) return;
       startedAtRef.current = Date.now();
       try {
-        startCommandRecognition({
+        await startCommandRecognition({
           longUtterance:
             mode === 'command' || mode === 'dictate_schedule_note',
         });
@@ -312,9 +320,8 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
           setPhaseSafe('done');
           await speakThen(outcome.message);
           if (gen !== sessionGenRef.current) return;
-          await speakThen(
-            'Quer acrescentar uma nota a este agendamento? Diga sim ou não.'
-          );
+          const lang = await getSecretinaLanguage();
+          await speakThen(askScheduleNotePhrase(lang));
           if (gen !== sessionGenRef.current) return;
           await new Promise((r) => setTimeout(r, 400));
           if (gen !== sessionGenRef.current) return;
@@ -410,15 +417,16 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         setLiveTranscript(trimmed);
         liveTranscriptRef.current = trimmed;
         try {
-          if (isSpokenYes(trimmed)) {
+          if (isSpokenYes(trimmed, await getSecretinaLanguage())) {
+            const greet = await getCanSpeakPhrase();
             setPhaseSafe('speaking');
-            setLiveTranscript('Pode falar…');
-            const heard = await speakThen('Pode falar.');
+            setLiveTranscript(greet);
+            const heard = await speakThen(greet);
             if (!heard) {
               setMicBusy(false);
               setPhaseSafe('error');
               setErrorMsg(
-                'Não consegui falar «Pode falar». Tente de novo ou use o botão da nota.'
+                'Não consegui iniciar a voz. Tente de novo ou use o botão da nota.'
               );
               return;
             }
@@ -426,7 +434,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             await openMicForMode('dictate_schedule_note');
             return;
           }
-          if (isSpokenNo(trimmed)) {
+          if (isSpokenNo(trimmed, await getSecretinaLanguage())) {
             const r = resultRef.current;
             const when =
               r?.ok && r.scheduledAt != null
@@ -444,7 +452,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             setPhaseSafe('done');
             return;
           }
-          await speakThen('Não entendi. Diga sim ou não.');
+          await speakThen(yesNoHint(await getSecretinaLanguage()));
           await openMicForMode('ask_schedule_note');
         } finally {
           processingRef.current = false;
@@ -658,7 +666,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
 
     if (listenModeRef.current === 'ask_schedule_note') {
       void (async () => {
-        await speakThen('Diga sim ou não.');
+        await speakThen(yesNoHint(await getSecretinaLanguage()));
         await openMicForMode('ask_schedule_note');
       })();
       return;
@@ -666,7 +674,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
 
     if (listenModeRef.current === 'dictate_schedule_note') {
       void (async () => {
-        await speakThen('Pode falar.');
+        await speakThen(await getCanSpeakPhrase());
         await openMicForMode('dictate_schedule_note');
       })();
       return;
@@ -687,10 +695,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     greetFirst?: boolean;
   }) => {
     if (Platform.OS === 'web') {
-      showAppAlert(
-        'Só no celular',
-        'O reconhecimento de voz do SeCretina funciona no app Android.'
-      );
+      showAppAlert(t('assistant.webOnly.title'), t('assistant.webOnly.body'));
       return;
     }
 
@@ -723,11 +728,12 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     const shouldGreet = Boolean(opts?.greetFirst) && !opts?.skipGreet;
     if (shouldGreet) {
       setPhaseSafe('speaking');
-      setLiveTranscript('Pode falar…');
-      const heard = await speakThen('Pode falar.');
+      const greet = await getCanSpeakPhrase();
+      setLiveTranscript(greet);
+      const heard = await speakThen(greet);
       if (!heard) {
         // Fallback: abre o mic na mesma — não deixa o assistente morto
-        setLiveTranscript('Microfone activo — fale agora');
+        setLiveTranscript('…');
         await new Promise((r) => setTimeout(r, 300));
         await openMicForMode('command');
         return;
@@ -816,18 +822,17 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             nestedScrollEnabled
             contentContainerStyle={styles.sheetScroll}
           >
-            <Text style={styles.title}>Falar com SeCretina</Text>
+            <Text style={styles.title}>{t('assistant.title')}</Text>
             {ambiguous.length === 0 ? (
               <Text style={styles.subtitle}>
-                Diga «Olá {wakeName}» ou use o botão.
-                {'\n'}
-                Ex.: «o que tenho amanhã», «cancela o com a Maria», «move o do
-                Paulo para quinta às 10», «agenda com Ana amanhã às 15»
+                {t('assistant.subtitle', { name: wakeName })}
               </Text>
             ) : null}
 
             {phase === 'speaking' ? (
-              <Text style={styles.listening}>{liveTranscript || 'A falar…'}</Text>
+              <Text style={styles.listening}>
+                {liveTranscript || t('assistant.phase.speaking')}
+              </Text>
             ) : null}
 
             {phase === 'listening' ? (
@@ -835,17 +840,17 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                 {liveTranscript.trim()
                   ? liveTranscript
                   : listenModeRef.current === 'pick_contact'
-                    ? 'Microfone activo — diga o número ou o sobrenome'
+                    ? t('assistant.listening.pick')
                     : listenModeRef.current === 'ask_schedule_note'
-                      ? 'Microfone activo — diga sim ou não'
+                      ? t('assistant.listening.yesNo')
                       : listenModeRef.current === 'dictate_schedule_note'
-                        ? 'Microfone activo — dite a nota do agendamento'
-                        : 'Microfone activo — fale agora o comando'}
+                        ? t('assistant.listening.dictate')
+                        : t('assistant.listening.command')}
               </Text>
             ) : null}
 
             {phase === 'processing' ? (
-              <Text style={styles.listening}>A processar…</Text>
+              <Text style={styles.listening}>{t('assistant.phase.processing')}</Text>
             ) : null}
 
             {phase === 'done' && result?.ok ? (
@@ -854,7 +859,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                 {(result.kind === 'note' || result.kind === 'mixed') &&
                 result.noteBody ? (
                   <>
-                    <Text style={styles.label}>Nota</Text>
+                    <Text style={styles.label}>{t('assistant.label.note')}</Text>
                     <Text style={styles.notePreview}>{result.noteBody}</Text>
                   </>
                 ) : null}
@@ -876,11 +881,13 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                 {result.kind === 'schedule' || result.kind === 'mixed' ? (
                   <>
                     <Text style={styles.notePreview}>
-                      Guardado na Agenda do app.
+                      {t('assistant.savedInAgenda')}
                     </Text>
                     {result.kind === 'schedule' && scheduleNotePreview ? (
                       <>
-                        <Text style={styles.label}>Nota do agendamento</Text>
+                        <Text style={styles.label}>
+                          {t('assistant.label.scheduleNote')}
+                        </Text>
                         <Text style={styles.notePreview}>
                           {scheduleNotePreview}
                         </Text>
@@ -888,16 +895,16 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                     ) : result.kind === 'schedule' ? (
                       <>
                         <Text style={styles.label}>
-                          Quer acrescentar uma nota a este agendamento?
+                          {t('assistant.label.askScheduleNote')}
                         </Text>
                         {listenModeRef.current === 'ask_schedule_note' ? (
                           <Text style={styles.listening}>
-                            Diga sim ou não…
+                            {t('assistant.listening.yesNo')}
                           </Text>
                         ) : null}
                         <DictateNoteButton
-                          title="Falar nota do agendamento"
-                          onTranscript={(t) => void onScheduleNoteDictated(t)}
+                          title={t('assistant.cta.dictateNote')}
+                          onTranscript={(tx) => void onScheduleNoteDictated(tx)}
                         />
                       </>
                     ) : null}
@@ -909,7 +916,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                 result.kind === 'cancel' ||
                 result.kind === 'reschedule' ? (
                   <Button
-                    title="Ver agenda"
+                    title={t('assistant.cta.viewAgenda')}
                     onPress={() => {
                       handleClose();
                       router.push('/(tabs)/agenda');
@@ -917,7 +924,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                   />
                 ) : result.contact?.id ? (
                   <Button
-                    title={`Abrir ${result.contact.name}`}
+                    title={t('assistant.cta.openContact', {
+                      name: result.contact.name,
+                    })}
                     onPress={() => {
                       handleClose();
                       router.push(`/contact/${result.contact!.id}`);
@@ -934,7 +943,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             {ambiguous.length > 0 ? (
               <>
                 <Text style={styles.label}>
-                  Escolha o contacto — diga o número ou toque
+                  {t('assistant.label.pickContact')}
                 </Text>
                 <View style={styles.pickList}>
                   {ambiguous.map((c, i) => (
@@ -944,7 +953,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                       onPress={() => pickContact(c)}
                     >
                       <Text style={styles.pickText}>
-                        {i + 1}. {c.name?.trim() || 'Sem nome'}
+                        {i + 1}. {c.name?.trim() || t('assistant.unnamed')}
                       </Text>
                       {c.phone_normalized ? (
                         <Text style={styles.pickHint}>
@@ -958,13 +967,16 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             ) : null}
 
             {phase === 'listening' ? (
-              <Button title="Parar e executar" onPress={stopListening} />
+              <Button
+                title={t('assistant.cta.stop')}
+                onPress={stopListening}
+              />
             ) : (
               <Button
                 title={
                   phase === 'idle' || phase === 'error' || phase === 'done'
-                    ? 'Falar agora'
-                    : 'Aguarde…'
+                    ? t('assistant.cta.speakNow')
+                    : t('assistant.cta.wait')
                 }
                 onPress={() => void startListening({ skipGreet: true })}
                 disabled={
@@ -975,17 +987,17 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
 
             {ambiguous.length === 0 ? (
               <>
-                <Text style={styles.label}>Ou digite / confirme o comando</Text>
+                <Text style={styles.label}>{t('assistant.label.typed')}</Text>
                 <TextInput
                   style={styles.input}
                   multiline
-                  placeholder="agenda com Paulo Silva amanhã às 15…"
+                  placeholder={t('assistant.placeholder.command')}
                   value={typedFallback}
                   onChangeText={setTypedFallback}
                   editable={phase !== 'processing'}
                 />
                 <Button
-                  title="Executar texto"
+                  title={t('assistant.cta.runText')}
                   variant="secondary"
                   onPress={submitTyped}
                   disabled={!typedFallback.trim() || phase === 'processing'}
@@ -993,7 +1005,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
               </>
             ) : null}
 
-            <Button title="Fechar" variant="ghost" onPress={handleClose} />
+            <Button
+              title={t('assistant.cta.close')}
+              variant="ghost"
+              onPress={handleClose}
+            />
           </ScrollView>
         </View>
       </View>

@@ -22,6 +22,7 @@ import { useThemedStyles } from '@/hooks/useThemedStyles';
 import { Button } from '@/components/ui/Button';
 import { HighlightText } from '@/components/HighlightText';
 import { useSecretinaAssistant } from '@/context/SecretinaAssistantContext';
+import { useI18n } from '@/i18n';
 
 type HomeListItem =
   | { kind: 'section'; id: string; title: string }
@@ -31,6 +32,7 @@ type HomeListItem =
 export default function ContactsScreen() {
   const router = useRouter();
   const colors = useColors();
+  const { t } = useI18n();
   const { openAssistant, wakeEnabled, wakeListening, wakeName } =
     useSecretinaAssistant();
   const styles = useThemedStyles((c) => ({
@@ -132,7 +134,7 @@ export default function ContactsScreen() {
       items.push({
         kind: 'section',
         id: 'section-contacts',
-        title: 'Contatos',
+        title: t('contacts.section.contacts'),
       });
       for (const contact of contacts) {
         items.push({
@@ -147,7 +149,7 @@ export default function ContactsScreen() {
       items.push({
         kind: 'section',
         id: 'section-notes',
-        title: 'Nas notas e transcrições',
+        title: t('contacts.section.notes'),
       });
       for (const hit of noteHits) {
         items.push({
@@ -159,7 +161,7 @@ export default function ContactsScreen() {
     }
 
     return items;
-  }, [contacts, noteHits, search]);
+  }, [contacts, noteHits, search, t]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -169,18 +171,21 @@ export default function ContactsScreen() {
 
   const handleImport = async () => {
     if (Platform.OS === 'web') {
-      Alert.alert(
-        'Somente no celular',
-        'Importar contatos do aparelho funciona no app Android/iOS, não no navegador.'
-      );
+      Alert.alert(t('contacts.alert.webTitle'), t('contacts.alert.webBody'));
       return;
     }
     try {
       const count = await importDeviceContacts();
-      Alert.alert('Importação', `${count} contato(s) importado(s).`);
+      Alert.alert(
+        t('contacts.alert.importTitle'),
+        t('contacts.alert.importCount', { count })
+      );
       await load();
     } catch (e) {
-      Alert.alert('Erro', e instanceof Error ? e.message : 'Falha ao importar.');
+      Alert.alert(
+        t('common.error'),
+        e instanceof Error ? e.message : t('contacts.alert.importError')
+      );
     }
   };
 
@@ -195,29 +200,25 @@ export default function ContactsScreen() {
     <View style={styles.container}>
       <TextInput
         style={styles.search}
-        placeholder="Buscar contato, nota ou transcrição…"
+        placeholder={t('contacts.search.placeholder')}
         placeholderTextColor={colors.textMuted}
         value={search}
         onChangeText={setSearch}
       />
       {search.trim().length > 0 && search.trim().length < 2 ? (
-        <Text style={styles.searchHint}>
-          Digite pelo menos 2 caracteres para buscar em notas e transcrições.
-        </Text>
+        <Text style={styles.searchHint}>{t('contacts.search.hintMin')}</Text>
       ) : search.trim().length >= 2 ? (
-        <Text style={styles.searchHint}>
-          Nome/telefone + texto dentro das notas de todos os contatos.
-        </Text>
+        <Text style={styles.searchHint}>{t('contacts.search.hintActive')}</Text>
       ) : null}
       <View style={styles.toolbar}>
         <Button
-          title="+ Novo"
+          title={t('contacts.action.new')}
           variant="primary"
           style={styles.toolbarBtn}
           onPress={() => router.push('/contact/new')}
         />
         <Button
-          title="Importar"
+          title={t('contacts.action.import')}
           variant="secondary"
           style={styles.toolbarBtn}
           onPress={handleImport}
@@ -226,7 +227,7 @@ export default function ContactsScreen() {
       {Platform.OS !== 'web' ? (
         <>
           <Button
-            title="Falar com SeCretina"
+            title={t('contacts.action.talk')}
             variant="secondary"
             onPress={() =>
               openAssistant({ autoListen: true, greetFirst: true })
@@ -236,12 +237,12 @@ export default function ContactsScreen() {
           {wakeEnabled ? (
             <Text style={[styles.searchHint, { marginBottom: 12 }]}>
               {wakeListening
-                ? `Escutando «Olá ${wakeName}»…`
-                : `«Olá ${wakeName}» activo — mantenha o app aberto.`}
+                ? t('contacts.wake.listening', { name: wakeName })
+                : t('contacts.wake.active', { name: wakeName })}
             </Text>
           ) : (
             <Text style={[styles.searchHint, { marginBottom: 12 }]}>
-              Active o chamamento em Ajustes para acordar por voz.
+              {t('contacts.wake.disabled')}
             </Text>
           )}
         </>
@@ -256,8 +257,8 @@ export default function ContactsScreen() {
         ListEmptyComponent={
           <Text style={styles.empty}>
             {search.trim()
-              ? 'Nenhum contato ou nota encontrado.'
-              : 'Nenhum contato. Crie um novo ou importe do celular.'}
+              ? t('contacts.empty.search')
+              : t('contacts.empty.default')}
           </Text>
         }
         renderItem={({ item }) => {
@@ -297,7 +298,9 @@ export default function ContactsScreen() {
               />
               <Text style={styles.noteMeta}>
                 {formatDateTime(item.hit.noteCreatedAt)}
-                {item.hit.matchedInTranscription ? ' · transcrição' : ''}
+                {item.hit.matchedInTranscription
+                  ? ` ${t('contacts.note.transcription')}`
+                  : ''}
               </Text>
             </Pressable>
           );

@@ -170,9 +170,31 @@ const PT_BR_INSTRUCTIONS_MALE =
   'como um assistente simpático e profissional. Tom caloroso, ritmo ' +
   'conversacional, sem soar robótico nem metálico. Pronúncia clara do Brasil.';
 
-async function synthesizeSpeech(text, voice, gender) {
-  const instructions =
-    gender === 'male' ? PT_BR_INSTRUCTIONS_MALE : PT_BR_INSTRUCTIONS_FEMALE;
+const ES_INSTRUCTIONS_FEMALE =
+  'Habla en español de forma natural y humana, como una secretaria simpática y profesional. Tono cálido, ritmo conversacional, sin sonar robótica. Pronunciación clara.';
+
+const ES_INSTRUCTIONS_MALE =
+  'Habla en español de forma natural y humana, como un asistente simpático y profesional. Tono cálido, ritmo conversacional, sin sonar robótico. Pronunciación clara.';
+
+const EN_INSTRUCTIONS_FEMALE =
+  'Speak in natural, human English like a friendly professional secretary. Warm tone, conversational pace, not robotic. Clear pronunciation.';
+
+const EN_INSTRUCTIONS_MALE =
+  'Speak in natural, human English like a friendly professional assistant. Warm tone, conversational pace, not robotic. Clear pronunciation.';
+
+function ttsInstructions(lang, gender) {
+  const code = String(lang || 'pt-BR').toLowerCase();
+  if (code.startsWith('es')) {
+    return gender === 'male' ? ES_INSTRUCTIONS_MALE : ES_INSTRUCTIONS_FEMALE;
+  }
+  if (code.startsWith('en')) {
+    return gender === 'male' ? EN_INSTRUCTIONS_MALE : EN_INSTRUCTIONS_FEMALE;
+  }
+  return gender === 'male' ? PT_BR_INSTRUCTIONS_MALE : PT_BR_INSTRUCTIONS_FEMALE;
+}
+
+async function synthesizeSpeech(text, voice, gender, lang) {
+  const instructions = ttsInstructions(lang, gender);
 
   let openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
@@ -221,8 +243,17 @@ async function synthesizeSpeech(text, voice, gender) {
   return buf;
 }
 
-function buildInterpretSystemPrompt(nowIso, nowLabel, contactNames) {
-  return `És a assistente SeCretina de um CRM de ligações em português (pt-BR/pt-PT).
+function buildInterpretSystemPrompt(nowIso, nowLabel, contactNames, language) {
+  const lang = String(language || 'pt-BR');
+  const langName =
+    lang.startsWith('es')
+      ? 'español'
+      : lang.startsWith('en')
+        ? 'English'
+        : 'português brasileiro (pt-BR)';
+
+  return `És a assistente SeCretina de um CRM de ligações.
+Idioma da conversa: ${langName}. Responde em reply/clarification NESSE idioma.
 Extrai acções a partir do que o utilizador disse. Pode haver VÁRIAS acções no mesmo pedido.
 
 Data/hora actual: ${nowIso} (${nowLabel})
@@ -240,14 +271,14 @@ Responde APENAS JSON válido com este formato:
     { "type": "cancel_schedule", "contactQuery": "Nome", "whenRaw": "opcional amanhã/hoje" },
     { "type": "reschedule", "contactQuery": "Nome", "fromWhenRaw": "opcional", "whenIso": "…", "whenRaw": "quinta às 10" }
   ],
-  "reply": "frase curta para dizer em voz alta ao utilizador",
-  "clarification": "se faltar info crítica, pergunta aqui; senão omita ou null"
+  "reply": "frase curta para dizer em voz alta ao utilizador (no idioma ${langName})",
+  "clarification": "se faltar info crítica, pergunta aqui no idioma ${langName}; senão omita ou null"
 }
 
 Regras:
 - Criar nota → type note (noteBody obrigatório).
 - Criar agendamento novo → type schedule (whenIso ou whenRaw; horário futuro).
-- Consultar/pesquisar agenda («o que tenho», «mostra», «quais», «pesquisa») → type list_agenda (não inventes itens; o app lista).
+- Consultar/pesquisar agenda → type list_agenda (não inventes itens; o app lista).
 - Cancelar/desmarcar → type cancel_schedule.
 - Mover/remarcar/reagendar existente → type reschedule (nova data em whenIso/whenRaw).
 - contactQuery = nome como dito.
@@ -325,9 +356,10 @@ app.post('/api/secretina/tts', async (req, res) => {
   const voiceRaw = String(req.body?.voice || 'coral').trim().toLowerCase();
   const voice = ALLOWED_TTS_VOICES.has(voiceRaw) ? voiceRaw : 'coral';
   const gender = req.body?.gender === 'male' ? 'male' : 'female';
+  const language = String(req.body?.language || 'pt-BR').trim() || 'pt-BR';
 
   try {
-    const mp3 = await synthesizeSpeech(text, voice, gender);
+    const mp3 = await synthesizeSpeech(text, voice, gender, language);
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store');
     res.send(mp3);
@@ -365,6 +397,7 @@ app.post('/api/secretina/interpret', async (req, res) => {
   const nowIso =
     String(req.body?.nowIso || '').trim() || new Date().toISOString();
   const nowLabel = String(req.body?.nowLabel || nowIso).trim();
+  const language = String(req.body?.language || 'pt-BR').trim() || 'pt-BR';
 
   try {
     const payload = await openaiJson(
@@ -376,7 +409,12 @@ app.post('/api/secretina/interpret', async (req, res) => {
         messages: [
           {
             role: 'system',
-            content: buildInterpretSystemPrompt(nowIso, nowLabel, contacts),
+            content: buildInterpretSystemPrompt(
+              nowIso,
+              nowLabel,
+              contacts,
+              language
+            ),
           },
           { role: 'user', content: spokenText },
         ],

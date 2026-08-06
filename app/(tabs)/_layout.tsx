@@ -2,6 +2,7 @@ import { Text } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useColors } from '@/context/ThemeContext';
 import { ThemeToggleButton } from '@/components/ThemeToggleButton';
+import { useI18n } from '@/i18n';
 
 function TabEmoji({ emoji }: { emoji: string }) {
   return <Text style={{ fontSize: 22, lineHeight: 26 }}>{emoji}</Text>;
@@ -9,6 +10,7 @@ function TabEmoji({ emoji }: { emoji: string }) {
 
 export default function TabsLayout() {
   const colors = useColors();
+  const { t } = useI18n();
 
   return (
     <Tabs
@@ -28,24 +30,24 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Contatos',
-          tabBarLabel: 'Contatos',
+          title: t('tabs.contacts'),
+          tabBarLabel: t('tabs.contacts'),
           tabBarIcon: () => <TabEmoji emoji="👥" />,
         }}
       />
       <Tabs.Screen
         name="agenda"
         options={{
-          title: 'Agenda',
-          tabBarLabel: 'Agenda',
+          title: t('tabs.agenda'),
+          tabBarLabel: t('tabs.agenda'),
           tabBarIcon: () => <TabEmoji emoji="📅" />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'SeCretina',
-          tabBarLabel: 'Ajustes',
+          title: t('tabs.settingsHeader'),
+          tabBarLabel: t('tabs.settings'),
           tabBarIcon: () => <TabEmoji emoji="⚙️" />,
         }}
       />

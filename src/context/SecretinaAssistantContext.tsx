@@ -215,16 +215,20 @@ export function SecretinaAssistantProvider({
     if (!appActive) return;
     if (assistantOpenRef.current || micBusyRef.current) return;
 
-    try {
-      ExpoSpeechRecognitionModule.start({
-        lang: 'pt-BR',
-        interimResults: true,
-        continuous: true,
-      });
-      setWakeListening(true);
-    } catch {
-      setWakeListening(false);
-    }
+    void (async () => {
+      try {
+        const { getSpeechLocale } = await import('@/services/secretinaLanguage');
+        const lang = await getSpeechLocale();
+        ExpoSpeechRecognitionModule.start({
+          lang,
+          interimResults: true,
+          continuous: true,
+        });
+        setWakeListening(true);
+      } catch {
+        setWakeListening(false);
+      }
+    })();
   }, [appActive]);
 
   const scheduleWakeRestart = useCallback(() => {

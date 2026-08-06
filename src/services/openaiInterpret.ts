@@ -4,6 +4,7 @@ import {
   openAiProxyAuthHeaders,
 } from '@/services/openaiProxy';
 import { formatDateTime } from '@/utils/date';
+import { getSecretinaLanguage } from '@/services/secretinaLanguage';
 
 export type AiActionNote = {
   type: 'note';
@@ -77,6 +78,7 @@ export async function interpretCommandWithOpenAi(
     .slice(0, 80)
     .map((c) => c.name)
     .filter(Boolean);
+  const language = await getSecretinaLanguage();
 
   let response: Response;
   try {
@@ -91,6 +93,7 @@ export async function interpretCommandWithOpenAi(
         contacts: contactNames,
         nowIso: now.toISOString(),
         nowLabel: formatDateTime(now.getTime()),
+        language,
       }),
     });
   } catch (e) {

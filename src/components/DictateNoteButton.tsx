@@ -139,7 +139,7 @@ export function DictateNoteButton({
 
     try {
       await prepareMicForRecognition();
-      startCommandRecognition();
+      await startCommandRecognition();
     } catch (e) {
       listeningRef.current = false;
       setListening(false);

@@ -57,6 +57,13 @@ import * as Contacts from 'expo-contacts';
 import * as Calendar from 'expo-calendar';
 import { useColors } from '@/context/ThemeContext';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
+import { useI18n } from '@/i18n';
+import {
+  SECRETINA_LANGUAGES,
+  getCanSpeakPhrase,
+  setSecretinaLanguage,
+  type SecretinaLanguage,
+} from '@/services/secretinaLanguage';
 
 export default function SettingsScreen() {
   const { support, isListening, restartDetection, lastPhoneEvent } =
@@ -69,11 +76,14 @@ export default function SettingsScreen() {
     wakeName,
     refreshWakeName,
   } = useSecretinaAssistant();
+  const { t, lang, setUiLanguage, refreshLanguage } = useI18n();
   const [bubbleOn, setBubbleOn] = useState(false);
   const [overlayOk, setOverlayOk] = useState(false);
   const [wakeNameInput, setWakeNameInput] = useState('SeCretina');
   const [voiceGender, setVoiceGenderState] =
     useState<SecretinaVoiceGender>('female');
+  const [selectedLang, setSelectedLang] =
+    useState<SecretinaLanguage>('pt-BR');
   const colors = useColors();
   const styles = useThemedStyles((c) => ({
     container: { flex: 1, backgroundColor: c.bg },
@@ -169,6 +179,19 @@ export default function SettingsScreen() {
       void prefetchPodeFalar();
     })();
   }, []);
+
+  useEffect(() => {
+    setSelectedLang(lang);
+  }, [lang]);
+
+  const applyLanguage = async (next: SecretinaLanguage) => {
+    setSelectedLang(next);
+    setUiLanguage(next);
+    await setSecretinaLanguage(next);
+    await refreshLanguage();
+    void prefetchPodeFalar();
+    Alert.alert(t('settings.language.title'), t('settings.language.saved'));
+  };
 
   const refreshBubbleState = async () => {
     if (!isBubbleOverlaySupported()) {
@@ -312,21 +335,36 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.card}>
-        <Text style={styles.title}>Sobre o SeCretina</Text>
-        <Text style={styles.body}>
-          CRM simples: após cada ligação, identifica o contacto e abre uma nota.
-          Use o chamamento por voz ou «Falar com SeCretina» para notas e
-          agendamentos — com OpenAI, num só pedido.
-        </Text>
+        <Text style={styles.title}>{t('settings.about.title')}</Text>
+        <Text style={styles.body}>{t('settings.about.body')}</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.title}>Voz da SeCretina</Text>
-        <Text style={styles.body}>
-          Escolha o timbre da assistente. A voz natural e a interpretação usam
-          o servidor da app (configurado no build) — sem chave no telemóvel.
-        </Text>
-        <Text style={styles.label}>Timbre (pt-BR natural)</Text>
+        <Text style={styles.title}>{t('settings.language.title')}</Text>
+        <Text style={styles.body}>{t('settings.language.body')}</Text>
+        {SECRETINA_LANGUAGES.map((opt) => {
+          const on = selectedLang === opt.id;
+          return (
+            <View key={opt.id} style={styles.toggleRow}>
+              <Pressable
+                style={[styles.checkbox, on && styles.checkboxOn]}
+                onPress={() => void applyLanguage(opt.id)}
+              >
+                {on ? <Text style={styles.checkMark}>✓</Text> : null}
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleLabel}>{opt.label}</Text>
+                <Text style={[styles.body, { marginTop: 2 }]}>{opt.hint}</Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.title}>{t('settings.voice.title')}</Text>
+        <Text style={styles.body}>{t('settings.voice.body')}</Text>
+        <Text style={styles.label}>{t('settings.voice.timbre')}</Text>
         <View style={styles.toggleRow}>
           <Pressable
             style={[
@@ -343,7 +381,7 @@ export default function SettingsScreen() {
               <Text style={styles.checkMark}>✓</Text>
             ) : null}
           </Pressable>
-          <Text style={styles.toggleLabel}>Feminina (Coral)</Text>
+          <Text style={styles.toggleLabel}>{t('settings.voice.female')}</Text>
         </View>
         <View style={styles.toggleRow}>
           <Pressable
@@ -361,24 +399,24 @@ export default function SettingsScreen() {
               <Text style={styles.checkMark}>✓</Text>
             ) : null}
           </Pressable>
-          <Text style={styles.toggleLabel}>Masculina (Ash)</Text>
+          <Text style={styles.toggleLabel}>{t('settings.voice.male')}</Text>
         </View>
         <Button
-          title="Testar voz («Pode falar»)"
+          title={t('settings.voice.test')}
           variant="secondary"
           onPress={async () => {
             try {
-              const r = await speakText('Pode falar.');
+              const r = await speakText(await getCanSpeakPhrase());
               if (!r.heard) {
                 Alert.alert(
-                  'Voz',
-                  'Não ouvi a reprodução. Confirme internet e o volume do telemóvel.'
+                  t('settings.voice.alertTitle'),
+                  t('settings.voice.alertNoPlay')
                 );
               }
             } catch (e) {
               Alert.alert(
-                'Voz',
-                e instanceof Error ? e.message : 'Falha ao testar a voz.'
+                t('settings.voice.alertTitle'),
+                e instanceof Error ? e.message : t('common.error')
               );
             }
           }}

@@ -8,6 +8,7 @@ import {
   AppState,
   Dimensions,
   FlatList,
+  Pressable,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
@@ -21,52 +22,68 @@ import {
   type PermissionKind,
 } from '@/services/permissionsSetup';
 import { requestIgnoreBatteryOptimizations } from '@/services/deviceSetup';
+import {
+  getSecretinaLanguage,
+  hasChosenSecretinaLanguage,
+  SECRETINA_LANGUAGES,
+  setSecretinaLanguage,
+  type SecretinaLanguage,
+} from '@/services/secretinaLanguage';
+import { prefetchPodeFalar } from '@/services/speech';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
+import { useI18n } from '@/i18n';
+import type { PtBRKey } from '@/i18n/locales/pt-BR';
 
-type SlideKind = PermissionKind | 'battery';
+type SlideKind = 'language' | PermissionKind | 'battery';
 
 type PermissionSlide = {
   id: SlideKind;
-  title: string;
-  why: string;
-  isOk: (c: PermissionCheck) => boolean;
+  titleKey: PtBRKey;
+  whyKey: PtBRKey;
+  isOk: (c: PermissionCheck, langChosen: boolean) => boolean;
 };
 
 const SLIDES: PermissionSlide[] = [
   {
+    id: 'language',
+    titleKey: 'onboarding.slide.language.title',
+    whyKey: 'onboarding.slide.language.why',
+    isOk: (_c, langChosen) => langChosen,
+  },
+  {
     id: 'mic',
-    title: 'Microfone',
-    why: 'Precisamos do microfone para ouvir o chamamento («Olá…»), gravar notas por voz e os comandos da assistente.',
+    titleKey: 'onboarding.slide.mic.title',
+    whyKey: 'onboarding.slide.mic.why',
     isOk: (c) => c.mic,
   },
   {
     id: 'notifications',
-    title: 'Notificações',
-    why: 'Usamos notificações para lembrar ligações agendadas e avisar quando uma nota ou pós-chamada está pronta.',
+    titleKey: 'onboarding.slide.notifications.title',
+    whyKey: 'onboarding.slide.notifications.why',
     isOk: (c) => c.notifications,
   },
   {
     id: 'phone',
-    title: 'Telefone e registo',
-    why: 'Detecta quando a chamada começa ou termina e ajuda a identificar o número para abrir a nota do contacto certo no CRM.',
+    titleKey: 'onboarding.slide.phone.title',
+    whyKey: 'onboarding.slide.phone.why',
     isOk: (c) => c.phone && c.callLog,
   },
   {
     id: 'contacts',
-    title: 'Contactos',
-    why: 'Serve para importar e reconhecer nomes e telefones, para a assistente saber «para quem» é a nota ou o agendamento.',
+    titleKey: 'onboarding.slide.contacts.title',
+    whyKey: 'onboarding.slide.contacts.why',
     isOk: (c) => c.contacts,
   },
   {
     id: 'calendar',
-    title: 'Calendário',
-    why: 'Mostra eventos do telemóvel junto com a agenda do SeCretina e permite criar lembretes alinhados.',
+    titleKey: 'onboarding.slide.calendar.title',
+    whyKey: 'onboarding.slide.calendar.why',
     isOk: (c) => c.calendar,
   },
   {
     id: 'battery',
-    title: 'Bateria sem restrições',
-    why: 'No Samsung e outros Android, a poupança de bateria pode matar a detecção de chamadas e a bolha flutuante. Sem restrições, o SeCretina continua a funcionar em segundo plano.',
+    titleKey: 'onboarding.slide.battery.title',
+    whyKey: 'onboarding.slide.battery.why',
     isOk: (c) => c.batteryUnrestricted,
   },
 ];
@@ -75,10 +92,13 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_W = Math.min(SCREEN_W - 48, 420);
 
 export function PermissionsGate({ children }: { children: ReactNode }) {
+  const { t, setUiLanguage, refreshLanguage } = useI18n();
   const [ready, setReady] = useState(Platform.OS !== 'android');
   const [checking, setChecking] = useState(Platform.OS === 'android');
   const [loadingKind, setLoadingKind] = useState<SlideKind | null>(null);
   const [check, setCheck] = useState<PermissionCheck | null>(null);
+  const [langChosen, setLangChosen] = useState(false);
+  const [selectedLang, setSelectedLang] = useState<SecretinaLanguage>('pt-BR');
   const [error, setError] = useState('');
   const [index, setIndex] = useState(0);
   const listRef = useRef<FlatList<PermissionSlide>>(null);
@@ -123,6 +143,38 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       status: { fontSize: 15, fontWeight: '700' },
       ok: { color: c.primary },
       bad: { color: c.danger },
+      langList: { gap: 8 },
+      langRow: {
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        backgroundColor: c.bg,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+      },
+      langRowOn: {
+        borderColor: c.primary,
+        backgroundColor: c.chip,
+      },
+      langCheck: {
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: c.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      langCheckOn: {
+        borderColor: c.primary,
+        backgroundColor: c.primary,
+      },
+      langCheckMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
+      langLabel: { fontSize: 16, fontWeight: '700', color: c.text },
+      langHint: { fontSize: 13, color: c.textMuted, marginTop: 2 },
       dots: {
         flexDirection: 'row',
         justifyContent: 'center',
@@ -155,12 +207,26 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
     })
   );
 
+  const refreshReady = useCallback(
+    (c: PermissionCheck, chosen: boolean) => {
+      setReady(chosen && permissionsAllGranted(c));
+    },
+    []
+  );
+
   const syncPermissions = useCallback(async () => {
     const c = await checkAllPermissions();
     setCheck(c);
-    setReady(permissionsAllGranted(c));
-    return c;
-  }, []);
+    const chosen = await hasChosenSecretinaLanguage();
+    setLangChosen(chosen);
+    if (chosen) {
+      const stored = await getSecretinaLanguage();
+      setSelectedLang(stored);
+      setUiLanguage(stored);
+    }
+    refreshReady(c, chosen);
+    return { c, chosen };
+  }, [refreshReady, setUiLanguage]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -168,11 +234,9 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const c = await checkAllPermissions();
+        const { c, chosen } = await syncPermissions();
         if (cancelled) return;
-        setCheck(c);
-        setReady(permissionsAllGranted(c));
-        const firstPending = SLIDES.findIndex((s) => !s.isOk(c));
+        const firstPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
         if (firstPending >= 0) {
           setIndex(firstPending);
           requestAnimationFrame(() => {
@@ -185,7 +249,7 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       } catch (e) {
         console.warn('SeCretina: onboarding permissões', e);
         if (!cancelled) {
-          setError('Erro ao ler permissões. Deslize e toque em Permitir.');
+          setError(t('onboarding.error.read'));
         }
       } finally {
         if (!cancelled) setChecking(false);
@@ -202,9 +266,40 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       cancelled = true;
       sub.remove();
     };
-  }, [syncPermissions]);
+  }, [syncPermissions, t]);
+
+  const saveLanguageAndContinue = async () => {
+    setLoadingKind('language');
+    setError('');
+    try {
+      await setSecretinaLanguage(selectedLang);
+      setUiLanguage(selectedLang);
+      await refreshLanguage();
+      setLangChosen(true);
+      void prefetchPodeFalar();
+      const { c, chosen } = await syncPermissions();
+      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
+      if (nextPending >= 0) {
+        setIndex(nextPending);
+        listRef.current?.scrollToIndex({
+          index: nextPending,
+          animated: true,
+        });
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : t('onboarding.error.saveLanguage')
+      );
+    } finally {
+      setLoadingKind(null);
+    }
+  };
 
   const requestOne = async (kind: SlideKind) => {
+    if (kind === 'language') {
+      await saveLanguageAndContinue();
+      return;
+    }
     setLoadingKind(kind);
     setError('');
     try {
@@ -213,15 +308,15 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       } else {
         await requestSinglePermission(kind);
       }
-      const c = await syncPermissions();
-      const nextPending = SLIDES.findIndex((s) => !s.isOk(c));
+      const { c, chosen } = await syncPermissions();
+      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
       if (nextPending >= 0 && nextPending !== index) {
         setIndex(nextPending);
         listRef.current?.scrollToIndex({ index: nextPending, animated: true });
       }
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : 'Falha ao pedir permissão.'
+        e instanceof Error ? e.message : t('onboarding.error.request')
       );
     } finally {
       setLoadingKind(null);
@@ -234,9 +329,9 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
   };
 
   const grantedCount = useMemo(() => {
-    if (!check) return 0;
-    return SLIDES.filter((s) => s.isOk(check)).length;
-  }, [check]);
+    if (!check) return langChosen ? 1 : 0;
+    return SLIDES.filter((s) => s.isOk(check, langChosen)).length;
+  }, [check, langChosen]);
 
   if (Platform.OS !== 'android' || ready) {
     return <>{children}</>;
@@ -261,20 +356,22 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
   };
 
   const current = SLIDES[index] ?? SLIDES[0];
-  const currentOk = current.isOk(c);
+  const currentOk = current.isOk(c, langChosen);
+  const currentTitle = t(current.titleKey);
 
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Text style={styles.title}>Configurar SeCretina</Text>
-        <Text style={styles.lead}>
-          Deslize para ver cada permissão e porque a pedimos. Autorize uma a
-          uma — o app abre quando estiver tudo pronto.
-        </Text>
+        <Text style={styles.title}>{t('onboarding.title')}</Text>
+        <Text style={styles.lead}>{t('onboarding.lead')}</Text>
       </View>
 
       <Text style={styles.progress}>
-        {grantedCount} de {SLIDES.length} autorizadas · {index + 1}/{SLIDES.length}
+        {t('onboarding.progress', {
+          granted: grantedCount,
+          total: SLIDES.length,
+          current: index + 1,
+        })}
       </Text>
 
       {error ? <Text style={styles.warn}>{error}</Text> : null}
@@ -293,15 +390,50 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
           index: i,
         })}
         renderItem={({ item }) => {
-          const ok = item.isOk(c);
+          const ok = item.isOk(c, langChosen);
           return (
             <View style={styles.slide}>
               <View style={styles.card}>
-                <Text style={styles.slideTitle}>{item.title}</Text>
-                <Text style={styles.why}>{item.why}</Text>
-                <Text style={[styles.status, ok ? styles.ok : styles.bad]}>
-                  {ok ? 'Autorizado ✓' : 'Pendente — toque em Permitir'}
-                </Text>
+                <Text style={styles.slideTitle}>{t(item.titleKey)}</Text>
+                <Text style={styles.why}>{t(item.whyKey)}</Text>
+                {item.id === 'language' ? (
+                  <View style={styles.langList}>
+                    {SECRETINA_LANGUAGES.map((opt) => {
+                      const on = selectedLang === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          style={[styles.langRow, on ? styles.langRowOn : null]}
+                          onPress={() => {
+                            setSelectedLang(opt.id);
+                            setUiLanguage(opt.id);
+                          }}
+                        >
+                          <View
+                            style={[
+                              styles.langCheck,
+                              on ? styles.langCheckOn : null,
+                            ]}
+                          >
+                            {on ? (
+                              <Text style={styles.langCheckMark}>✓</Text>
+                            ) : null}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.langLabel}>{opt.label}</Text>
+                            <Text style={styles.langHint}>{opt.hint}</Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={[styles.status, ok ? styles.ok : styles.bad]}>
+                    {ok
+                      ? t('onboarding.status.ok')
+                      : t('onboarding.status.pending')}
+                  </Text>
+                )}
               </View>
             </View>
           );
@@ -318,12 +450,41 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       </View>
 
       <View style={styles.actions}>
-        {!currentOk ? (
+        {current.id === 'language' ? (
+          <Button
+            title={
+              loadingKind === 'language'
+                ? t('onboarding.cta.wait')
+                : langChosen
+                  ? index < SLIDES.length - 1
+                    ? t('onboarding.cta.next')
+                    : t('onboarding.cta.finish')
+                  : t('onboarding.cta.continueLanguage')
+            }
+            onPress={() => {
+              if (langChosen && currentOk) {
+                if (index < SLIDES.length - 1) {
+                  const next = index + 1;
+                  setIndex(next);
+                  listRef.current?.scrollToIndex({
+                    index: next,
+                    animated: true,
+                  });
+                } else {
+                  void syncPermissions();
+                }
+              } else {
+                void requestOne('language');
+              }
+            }}
+            disabled={loadingKind !== null}
+          />
+        ) : !currentOk ? (
           <Button
             title={
               loadingKind === current.id
-                ? 'Aguarde…'
-                : `Permitir ${current.title}`
+                ? t('onboarding.cta.wait')
+                : t('onboarding.cta.allow', { title: currentTitle })
             }
             onPress={() => void requestOne(current.id)}
             disabled={loadingKind !== null}
@@ -331,7 +492,9 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
         ) : (
           <Button
             title={
-              index < SLIDES.length - 1 ? 'Seguinte' : 'Concluir'
+              index < SLIDES.length - 1
+                ? t('onboarding.cta.next')
+                : t('onboarding.cta.finish')
             }
             onPress={() => {
               if (index < SLIDES.length - 1) {
@@ -345,16 +508,19 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
           />
         )}
 
-        <Button
-          title="Abrir configurações do Android"
-          variant="secondary"
-          onPress={openAppSettings}
-        />
+        {current.id !== 'language' ? (
+          <Button
+            title={t('onboarding.cta.openSettings')}
+            variant="secondary"
+            onPress={openAppSettings}
+          />
+        ) : null}
       </View>
 
       <Text style={styles.footer}>
-        Se o Android mostrar «Não permitir», use «Abrir configurações» e active
-        manualmente essa permissão.
+        {current.id === 'language'
+          ? t('onboarding.footer.language')
+          : t('onboarding.footer.permission')}
       </Text>
     </View>
   );
