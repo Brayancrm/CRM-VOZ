@@ -73,9 +73,9 @@ export function useSecretinaAssistant() {
   return useContext(SecretinaAssistantContext);
 }
 
-const WAKE_WATCHDOG_MS = 10_000;
-const WAKE_STALE_MS = 35_000;
-/** Junta pedaços do STT («Olá» + «Bruno») durante esta janela. */
+/** Só reinicia se o wake ficar morto muito tempo — evita bip constante. */
+const WAKE_WATCHDOG_MS = 20_000;
+const WAKE_STALE_MS = 60_000;
 const WAKE_BUFFER_MS = 4500;
 
 export function SecretinaAssistantProvider({
@@ -128,7 +128,6 @@ export function SecretinaAssistantProvider({
     return () => sub.remove();
   }, []);
 
-  // Rede de segurança: se o assistente fechou, micBusy NÃO pode bloquear o wake
   useEffect(() => {
     if (!assistantOpen) {
       assistantOpenRef.current = false;
@@ -231,34 +230,24 @@ export function SecretinaAssistantProvider({
     if (!appActive) return;
     if (assistantOpenRef.current || micBusyRef.current) return;
     if (wakeStartingRef.current) return;
+    // Já a escutar — não reinicia (reinício = bip do Android)
+    if (wakeListeningRef.current) return;
 
     wakeStartingRef.current = true;
     void (async () => {
       try {
-        abortSpeechRecognition();
-        await new Promise((r) => setTimeout(r, 250));
         if (assistantOpenRef.current || micBusyRef.current) return;
         if (!wakeEnabledRef.current) return;
         if (AppState.currentState !== 'active') return;
 
         const { getSpeechLocale } = await import('@/services/secretinaLanguage');
-        const { prepareMicForRecognition } = await import(
-          '@/services/speechDictate'
-        );
-        await prepareMicForRecognition();
-
         const lang = await getSpeechLocale();
-        // continuous:false = mais fiável no Samsung/Android; reiniciamos no "end"
+
+        // continuous:true = uma sessão longa, sem bip a cada 1–2 s
         ExpoSpeechRecognitionModule.start({
           lang,
           interimResults: true,
-          continuous: false,
-          androidIntentOptions: {
-            EXTRA_LANGUAGE_MODEL: 'free_form',
-            EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 1600,
-            EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 1200,
-            EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS: 400,
-          },
+          continuous: true,
         });
         lastWakeAliveAt.current = Date.now();
         wakeListeningRef.current = true;
@@ -274,13 +263,14 @@ export function SecretinaAssistantProvider({
   }, [appActive]);
 
   const scheduleWakeRestart = useCallback(
-    (delayMs = 700) => {
+    (delayMs = 1500) => {
       if (restartTimer.current) clearTimeout(restartTimer.current);
       restartTimer.current = setTimeout(() => {
         if (
           wakeEnabledRef.current &&
           !assistantOpenRef.current &&
           !micBusyRef.current &&
+          !wakeListeningRef.current &&
           AppState.currentState === 'active'
         ) {
           startWakeListen();
@@ -309,7 +299,7 @@ export function SecretinaAssistantProvider({
       !assistantOpenRef.current &&
       AppState.currentState === 'active'
     ) {
-      scheduleWakeRestart(400);
+      scheduleWakeRestart(800);
     }
   }, [scheduleWakeRestart]);
 
@@ -320,7 +310,7 @@ export function SecretinaAssistantProvider({
       !assistantOpen &&
       Platform.OS !== 'web'
     ) {
-      scheduleWakeRestart(400);
+      scheduleWakeRestart(600);
     } else {
       setWakeListening(false);
       wakeListeningRef.current = false;
@@ -333,6 +323,7 @@ export function SecretinaAssistantProvider({
     };
   }, [wakeEnabled, appActive, assistantOpen, scheduleWakeRestart]);
 
+  // Watchdog suave: só se estiver morto há muito tempo
   useEffect(() => {
     if (Platform.OS === 'web') return;
     if (!wakeEnabled || !appActive || assistantOpen) return;
@@ -345,7 +336,10 @@ export function SecretinaAssistantProvider({
 
       const stale = Date.now() - lastWakeAliveAt.current > WAKE_STALE_MS;
       if (!wakeListeningRef.current || stale) {
-        scheduleWakeRestart(300);
+        wakeListeningRef.current = false;
+        setWakeListening(false);
+        abortSpeechRecognition();
+        scheduleWakeRestart(1200);
       }
     }, WAKE_WATCHDOG_MS);
 
@@ -381,7 +375,6 @@ export function SecretinaAssistantProvider({
     wakeHandledAt.current = now;
     wakeBufferRef.current = [];
 
-    console.log('SeCretina wake hit:', combined || spoken);
     openAssistant({ autoListen: true, greetFirst: true });
   };
 
@@ -392,7 +385,6 @@ export function SecretinaAssistantProvider({
     lastWakeAliveAt.current = Date.now();
     wakeListeningRef.current = true;
 
-    // Usa o melhor resultado disponível (final ou parcial)
     const parts = (event.results ?? [])
       .map((r) => r?.transcript ?? '')
       .filter(Boolean);
@@ -410,24 +402,25 @@ export function SecretinaAssistantProvider({
       !assistantOpenRef.current &&
       !micBusyRef.current
     ) {
-      scheduleWakeRestart(500);
+      // Reinício calmo — não imediato (evita bip em loop)
+      scheduleWakeRestart(1600);
     }
   });
 
   useSpeechRecognitionEvent('error', (event) => {
     wakeListeningRef.current = false;
     setWakeListening(false);
-    // no-speech é normal no ciclo short-utterance — só reinicia
+
+    // no-speech / timeout em continuous: ignorar se ainda “vivo”; senão reinicia tarde
+    const soft =
+      event?.error === 'no-speech' || event?.error === 'speech-timeout';
+
     if (
       wakeEnabledRef.current &&
       !assistantOpenRef.current &&
       !micBusyRef.current
     ) {
-      const delay =
-        event?.error === 'no-speech' || event?.error === 'speech-timeout'
-          ? 400
-          : 900;
-      scheduleWakeRestart(delay);
+      scheduleWakeRestart(soft ? 2000 : 2500);
     }
   });
 
