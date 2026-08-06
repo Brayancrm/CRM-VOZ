@@ -11,6 +11,9 @@ export type SecretinaVoiceGender = 'female' | 'male';
 
 const DEFAULT_WAKE_NAME = 'SeCretina';
 
+const GREETING_RE =
+  /\b(ola|oi|ei|hey|eai|hola|hello|hi|ey|e\s*ai)\b/;
+
 export async function getWakeName(): Promise<string> {
   const saved = (await getAppSetting(KEY_WAKE_NAME))?.trim();
   return saved || DEFAULT_WAKE_NAME;
@@ -48,51 +51,77 @@ export async function hasOpenAiApiKey(): Promise<boolean> {
 /** OpenAI TTS voice id conforme o género (gpt-4o-mini-tts). */
 export async function getOpenAiTtsVoice(): Promise<string> {
   const gender = await getVoiceGender();
-  // coral ≈ feminina natural pt; ash ≈ masculina natural
   return gender === 'male' ? 'ash' : 'coral';
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Variantes comuns que o STT inventa para «SeCretina». */
+function nameVariants(name: string): string[] {
+  const n = normalizeSpoken(name);
+  const out = new Set<string>([n]);
+  if (n.includes('secretina') || n === 'secretina' || n.startsWith('secret')) {
+    out.add('secretina');
+    out.add('secretaria');
+    out.add('secretária');
+    out.add('se cretina');
+    out.add('secre tina');
+  }
+  // sem espaços
+  out.add(n.replace(/\s+/g, ''));
+  return [...out].map((x) => normalizeSpoken(x)).filter((x) => x.length >= 2);
+}
+
+function textIncludesName(spokenNorm: string, wakeName: string): boolean {
+  for (const variant of nameVariants(wakeName)) {
+    const re = new RegExp(
+      `(^|[^a-z0-9])${escapeRegExp(variant).replace(/\s+/g, '\\s*')}([^a-z0-9]|$)`
+    );
+    if (re.test(spokenNorm)) return true;
+    if (spokenNorm.includes(variant.replace(/\s+/g, ''))) return true;
+  }
+  return false;
+}
+
 /**
- * Detecta «olá/hola/hello {nome}», «oi {nome}», etc.
- * Nome pode ter várias palavras (ex.: «Secretária Ana»).
+ * Detecta «olá/hola/hello {nome}», «oi {nome}», nome sozinho, etc.
+ * Tolerante a STT (acentos, «secretaria», cumprimentos separados).
  */
 export function matchesWakePhrase(spoken: string, wakeName: string): boolean {
   const n = normalizeSpoken(spoken);
   const name = normalizeSpoken(wakeName);
   if (!n || !name || name.length < 2) return false;
 
-  const nameRe = name.replace(/\s+/g, '\\s+');
-  // pt: ola/oi/ei/eai · es: hola · en: hello/hi · comum: hey
-  if (
-    new RegExp(
-      `\\b(ola|oi|ei|hey|eai|hola|hello|hi)\\s+${nameRe}\\b`
-    ).test(n)
-  ) {
-    return true;
-  }
-  if (new RegExp(`^${nameRe}$`).test(n)) return true;
-  // Nome sozinho no início de frase curta («SeCretina, …»)
-  if (
-    n.length <= name.length + 16 &&
-    new RegExp(`^${nameRe}\\b`).test(n)
-  ) {
-    return true;
-  }
+  const hasName = textIncludesName(n, wakeName);
+  if (!hasName) return false;
+
+  // Cumprimento + nome (ordem livre: «Bruno olá» também)
+  if (GREETING_RE.test(n)) return true;
+
+  // Só o nome (frase curta)
+  const compact = n.replace(/\s+/g, '');
+  const nameCompact = name.replace(/\s+/g, '');
+  if (compact === nameCompact) return true;
+  if (n.length <= name.length + 18 && hasName) return true;
+
   return false;
 }
 
 export function stripWakeFromText(spoken: string, wakeName: string): string {
-  const name = normalizeSpoken(wakeName).replace(/\s+/g, '\\s+');
-  let t = spoken.trim();
-  t = t.replace(
-    new RegExp(
-      `^(olá|ola|oi|ei|hey|eai|hola|hello|hi)\\s+${name}\\s*[,.]?\\s*`,
-      'i'
-    ),
-    ''
-  );
-  t = t.replace(new RegExp(`^${name}\\s*[,.]?\\s*`, 'i'), '');
-  return t.trim();
+  const name = normalizeSpoken(wakeName);
+  let t = normalizeSpoken(spoken);
+  t = t.replace(GREETING_RE, ' ');
+  for (const variant of nameVariants(wakeName)) {
+    t = t.replace(
+      new RegExp(escapeRegExp(variant).replace(/\s+/g, '\\s*'), 'g'),
+      ' '
+    );
+  }
+  // também tenta o nome original
+  t = t.replace(new RegExp(escapeRegExp(name).replace(/\s+/g, '\\s*'), 'g'), ' ');
+  return t.replace(/\s+/g, ' ').trim();
 }
 
 export { DEFAULT_WAKE_NAME };
