@@ -231,3 +231,8 @@ export function parseSpokenDateTime(
 
   return result;
 }
+
+/** True se a fala inclui hora do relógio (ex.: «às 15», «3pm»). */
+export function hasSpokenClockTime(raw: string): boolean {
+  return parseHourMinute(normalizeSpoken(raw)) != null;
+}

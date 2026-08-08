@@ -280,11 +280,12 @@ Respond with ONLY valid JSON in this format:
 }
 
 Rules:
-- If intent is clear but a critical field is missing (e.g. time for a schedule), STILL return the partial action(s) with what you know AND set clarification to ask ONLY for the missing field in ${langName} (e.g. "A que horas?"). Do NOT leave actions empty when contact and intent are known.
-- Example: "schedule with Maria tomorrow" without a clock time → actions:[{type:"schedule",contactQuery:"Maria",whenRaw:"tomorrow"}] + clarification asking for the time.
+- CRITICAL distinction: CREATING an appointment vs LISTING the agenda.
+  * CREATE (type schedule): "agenda com Maria amanhã", "agendar ligação com Paulo", "marca com Ana quinta", "schedule with Maria tomorrow". ALWAYS schedule when the user names a contact with "com"/"with"/"con" to book a call — even if the clock time is missing.
+  * LIST (type list_agenda): only when the user is querying existing items — "o que tenho amanhã", "mostra a agenda", "what do I have tomorrow", "lista compromissos", "agenda de hoje" WITHOUT "com [Nome]".
+- If creating and clock time is missing (e.g. only "amanhã"), STILL return type schedule with contactQuery + whenRaw, and clarification = short ask for time only in ${langName} (e.g. "A que horas?"). Do NOT use list_agenda. Do NOT leave actions empty.
+- Example: "agenda com Maria amanhã" → {"actions":[{"type":"schedule","contactQuery":"Maria","whenRaw":"amanhã"}],"reply":"","clarification":"A que horas?"}
 - Create note → type note (noteBody required; if missing body, still return note with contactQuery and empty noteBody + clarification).
-- Create new appointment → type schedule (whenIso or whenRaw; future time).
-- Query/search agenda → type list_agenda (do not invent items; the app lists them).
 - Cancel → type cancel_schedule.
 - Move/reschedule existing → type reschedule (new date in whenIso/whenRaw; if new time missing, return partial reschedule + clarification).
 - contactQuery = name as spoken.

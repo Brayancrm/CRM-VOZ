@@ -20,6 +20,7 @@ import {
 } from '@/services/secretinaAgendaVoice';
 import { scheduleCallReminders } from '@/services/notifications';
 import {
+  coerceCreateScheduleActions,
   findMissingSlot,
   mergeSlotFill,
   questionForMissingSlot,
@@ -584,9 +585,10 @@ export async function runSecretinaVoiceCommand(
     const ai = await interpretCommandWithOpenAi(trimmed);
     if (ai) {
       if (ai.actions.length > 0) {
+        const actions = coerceCreateScheduleActions(trimmed, ai.actions);
         return runAiActions(
           trimmed,
-          ai.actions,
+          actions,
           ai.reply,
           lang,
           options,

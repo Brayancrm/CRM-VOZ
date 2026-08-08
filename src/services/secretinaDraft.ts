@@ -1,5 +1,7 @@
 import type { AiAction } from '@/services/openaiInterpret';
 import type { SecretinaLanguage } from '@/services/secretinaLanguage';
+import { parseSpokenDateTime } from '@/utils/spokenDateTime';
+import { normalizeSpoken } from '@/utils/normalizeSpoken';
 
 /** Campo em falta num pedido já interpretado (não repetir tudo). */
 export type MissingSlot = 'when' | 'note_body' | 'new_when';
@@ -12,19 +14,62 @@ export type PendingCommandDraft = {
   reply?: string;
 };
 
+function whenResolvable(whenIso?: string, whenRaw?: string): boolean {
+  if (whenIso?.trim()) {
+    const t = Date.parse(whenIso);
+    if (!Number.isNaN(t)) return true;
+  }
+  if (whenRaw?.trim()) {
+    return parseSpokenDateTime(whenRaw) != null;
+  }
+  return false;
+}
+
 export function findMissingSlot(actions: AiAction[]): MissingSlot | null {
   for (const a of actions) {
     if (a.type === 'note' && !a.noteBody?.trim()) return 'note_body';
     if (a.type === 'schedule') {
-      const hasWhen = !!(a.whenIso?.trim() || a.whenRaw?.trim());
-      if (!hasWhen) return 'when';
+      // «amanhã» sem hora → falta horário (não repetir o pedido todo)
+      if (!whenResolvable(a.whenIso, a.whenRaw)) return 'when';
     }
     if (a.type === 'reschedule') {
-      const hasWhen = !!(a.whenIso?.trim() || a.whenRaw?.trim());
-      if (!hasWhen) return 'new_when';
+      if (!whenResolvable(a.whenIso, a.whenRaw)) return 'new_when';
     }
   }
   return null;
+}
+
+/**
+ * Corrige IA que devolve list_agenda para «agenda com Maria amanhã».
+ */
+export function coerceCreateScheduleActions(
+  spokenText: string,
+  actions: AiAction[]
+): AiAction[] {
+  const norm = normalizeSpoken(spokenText);
+  const isCreate =
+    (/\b(agenda|agende|agendar|marca|marque|marcar)\b/.test(norm) &&
+      /\bcom\b/.test(norm)) ||
+    (/\b(agende|agendar|marca|marque|marcar)\b/.test(norm) &&
+      /\b(ligacao|chamada|call)\b/.test(norm));
+  if (!isCreate) return actions;
+
+  const onlyList =
+    actions.length > 0 && actions.every((a) => a.type === 'list_agenda');
+  if (!onlyList) return actions;
+
+  const list = actions[0];
+  if (list.type !== 'list_agenda') return actions;
+  const contactQuery = (list.contactQuery || '').trim();
+  if (!contactQuery) return actions;
+
+  return [
+    {
+      type: 'schedule',
+      contactQuery,
+      whenRaw: list.whenRaw || spokenText,
+    },
+  ];
 }
 
 /** Junta só o pedaço em falta ao rascunho (ex.: «às 15» + «amanhã com a Maria»). */

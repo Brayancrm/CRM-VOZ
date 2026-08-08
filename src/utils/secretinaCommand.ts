@@ -1,5 +1,4 @@
 import { normalizeSpoken } from '@/utils/normalizeSpoken';
-import { parseSpokenDateTime } from '@/utils/spokenDateTime';
 
 export type SecretinaIntent =
   | { type: 'note'; contactQuery: string; noteBody: string }
@@ -142,27 +141,54 @@ function extractContactFromAgendaPhrase(_norm: string, cleaned: string): string 
   return stripArticles(n);
 }
 
+function looksLikeCreateSchedule(norm: string): boolean {
+  // «agenda com Maria…», «agendar ligação…», «marcar com…»
+  if (
+    /\b(agende|agendar|marca|marque|marcar)\b/.test(norm) &&
+    (/\bcom\b/.test(norm) ||
+      /\b(ligacao|chamada|call|llamada)\b/.test(norm) ||
+      findWhenStartIndex(norm) >= 0)
+  ) {
+    return true;
+  }
+  if (/\bagenda\b/.test(norm) && /\bcom\b/.test(norm)) return true;
+  if (
+    /\bagenda\b/.test(norm) &&
+    /\b(ligacao|chamada|call|llamada)\b/.test(norm)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function parseListAgendaCommand(
   cleaned: string,
   norm: string
 ): SecretinaIntent | null {
+  // Criar compromisso ≠ consultar agenda
+  if (looksLikeCreateSchedule(norm) && !hasListAgendaKeyword(norm)) {
+    return null;
+  }
+
   if (!hasListAgendaKeyword(norm) && !/\bo\s+que\s+tenho\b/.test(norm)) {
-    // «pesquisa agendamento Paulo» / «agenda de hoje»
+    // «pesquisa agendamento Paulo» / «agenda de hoje» (sem «com»)
     if (
       !/\b(pesquisa|pesquisar|busca|buscar|mostra|o\s+que\s+tenho|quais)\b/.test(
         norm
       ) &&
-      !(/\bagenda\b/.test(norm) && /\b(hoje|amanha|semana|segunda|terca|quarta|quinta|sexta)\b/.test(norm))
+      !(
+        /\bagenda\b/.test(norm) &&
+        /\b(hoje|amanha|semana|segunda|terca|quarta|quinta|sexta)\b/.test(
+          norm
+        ) &&
+        !/\bcom\b/.test(norm)
+      )
     ) {
       return null;
     }
   }
-  // Evitar confundir com criar («agenda com Paulo amanhã às 15»)
-  if (
-    /\b(agenda|agende|agendar|marca|marque|marcar)\b/.test(norm) &&
-    findWhenStartIndex(norm) >= 0 &&
-    /\b(as|a)\s+\d{1,2}\b|\b\d{1,2}\s*(?:horas?|hrs?|h)\b/.test(norm)
-  ) {
+  // Evitar confundir com criar («agenda com Paulo amanhã» / «…às 15»)
+  if (looksLikeCreateSchedule(norm)) {
     return null;
   }
 
@@ -278,14 +304,6 @@ function parseScheduleCommand(cleaned: string, norm: string): SecretinaIntent | 
 
   // Sempre no texto normalizado (sem acentos) — evita bug do \b com «amanhã»
   const whenRaw = norm.slice(whenStart).trim();
-  if (!parseSpokenDateTime(whenRaw)) {
-    return {
-      type: 'unknown',
-      reason:
-        'Não consegui interpretar a data/hora. Tente «amanhã às 15» ou «quinta às 10».',
-    };
-  }
-
   const contactQuery = stripScheduleNoise(norm.slice(0, whenStart));
   if (!contactQuery || contactQuery.length < 2) {
     return {
@@ -295,6 +313,7 @@ function parseScheduleCommand(cleaned: string, norm: string): SecretinaIntent | 
     };
   }
 
+  // Sem hora (ex.: «amanhã») — devolve schedule parcial; o modal pede só a hora.
   return { type: 'schedule', contactQuery, whenRaw };
 }
 
