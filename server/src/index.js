@@ -280,13 +280,15 @@ Respond with ONLY valid JSON in this format:
 }
 
 Rules:
-- Create note → type note (noteBody required).
+- If intent is clear but a critical field is missing (e.g. time for a schedule), STILL return the partial action(s) with what you know AND set clarification to ask ONLY for the missing field in ${langName} (e.g. "A que horas?"). Do NOT leave actions empty when contact and intent are known.
+- Example: "schedule with Maria tomorrow" without a clock time → actions:[{type:"schedule",contactQuery:"Maria",whenRaw:"tomorrow"}] + clarification asking for the time.
+- Create note → type note (noteBody required; if missing body, still return note with contactQuery and empty noteBody + clarification).
 - Create new appointment → type schedule (whenIso or whenRaw; future time).
 - Query/search agenda → type list_agenda (do not invent items; the app lists them).
 - Cancel → type cancel_schedule.
-- Move/reschedule existing → type reschedule (new date in whenIso/whenRaw).
+- Move/reschedule existing → type reschedule (new date in whenIso/whenRaw; if new time missing, return partial reschedule + clarification).
 - contactQuery = name as spoken.
-- If user asks to create schedule AND note → schedule + note.
+- If user asks to create schedule AND note in one utterance → schedule (with note field) and/or note action together. Prefer putting appointment text in schedule.note when it is about that call.
 - If not note/agenda, actions=[] and clarification with help in ${langName}.
 - No markdown, JSON only.`;
 }

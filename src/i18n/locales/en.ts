@@ -21,6 +21,16 @@ export const en: Record<PtBRKey, string> = {
   'onboarding.slide.language.title': 'SeCretina language',
   'onboarding.slide.language.why':
     'Choose the language the assistant speaks and you reply in by voice. App text switches to this language.',
+  'onboarding.slide.wake.title': 'Voice wake',
+  'onboarding.slide.wake.why':
+    'Enable wake and choose the name you call her (e.g. SeCretina). It stays on forever — with the app open, say “Hello” + the name. You cannot turn it off later.',
+  'onboarding.slide.wake.nameLabel': 'Wake name',
+  'onboarding.slide.wake.namePlaceholder': 'SeCretina',
+  'onboarding.cta.enableWake': 'Enable wake',
+  'onboarding.status.wakeOk': 'Wake active ✓',
+  'onboarding.status.wakePending': 'Pending — tap Enable',
+  'onboarding.footer.wake':
+    'Wake stays permanent. Use the microphone with the app open.',
   'onboarding.slide.mic.title': 'Microphone',
   'onboarding.slide.mic.why':
     'We need the microphone for the wake phrase (“Hello…”), voice notes, and assistant commands.',
@@ -64,7 +74,7 @@ export const en: Record<PtBRKey, string> = {
   'contacts.action.talk': 'Talk to SeCretina',
   'contacts.wake.listening': 'Listening for “Hello {name}”…',
   'contacts.wake.active': '“Hello {name}” active — say the name to open.',
-  'contacts.wake.disabled': 'Enable wake word in Settings to talk hands-free.',
+  'contacts.wake.disabled': 'Finish initial setup for voice wake.',
   'contacts.empty.search': 'No results for this search.',
   'contacts.empty.default': 'No contacts. Tap + New or Import.',
   'contacts.note.transcription': '· transcript',
@@ -109,11 +119,12 @@ export const en: Record<PtBRKey, string> = {
 
   'assistant.title': 'Talk to SeCretina',
   'assistant.subtitle':
-    'Say “Hello {name}” or use the button.\nE.g. “what do I have tomorrow”, “cancel the one with Maria”, “schedule Ana tomorrow at 3”',
+    'Say “Hello {name}” or use the button.\nIn one sentence: note, schedule, cancel or reschedule — e.g. “schedule Ana tomorrow at 3 and note it’s about the contract”',
   'assistant.phase.speaking': 'Speaking…',
   'assistant.phase.processing': 'Processing…',
   'assistant.listening.command': 'Mic on — say your command now',
   'assistant.listening.pick': 'Mic on — say the number or last name',
+  'assistant.listening.fillSlot': 'Mic on — say only what’s missing',
   'assistant.listening.yesNo': 'Yes / No / Sí…',
   'assistant.listening.dictate': 'Mic on — dictate the appointment note',
   'assistant.label.note': 'Note',
@@ -122,6 +133,8 @@ export const en: Record<PtBRKey, string> = {
     'Would you like to add a note to this appointment?',
   'assistant.label.typed': 'Or type / confirm the command',
   'assistant.label.pickContact': 'Pick the contact — say the number or tap',
+  'assistant.label.pickSchedule':
+    'Pick the appointment — say the number or tap',
   'assistant.savedInAgenda': 'Saved to the app Agenda.',
   'assistant.cta.stop': 'Stop and run',
   'assistant.cta.speakNow': 'Speak now',
@@ -154,30 +167,22 @@ export const en: Record<PtBRKey, string> = {
   'contact.duplicateTitle': 'Duplicate',
   'contact.duplicateBody': 'A contact with this phone already exists.',
 
-  'settings.wake.title': 'Voice wake',
-  'settings.wake.body':
-    'With the app open, say “{greeting} {name}”. She replies and opens the mic. Does not work with the screen locked.',
-  'settings.wake.nameLabel': 'Wake name',
-  'settings.wake.saveName': 'Save name',
-  'settings.wake.saved': 'Now say “{greeting} {name}”.',
-  'settings.wake.state': 'Status: {state}',
-  'settings.wake.stateListening': 'listening…',
-  'settings.wake.stateActive': 'active (waiting)',
-  'settings.wake.stateOff': 'off',
-  'settings.wake.disable': 'Disable “{greeting} {name}”',
-  'settings.wake.enable': 'Enable “{greeting} {name}”',
-  'settings.wake.enabledAlert': 'Active. Say “{greeting} {name}” with the app open.',
-  'settings.wake.disabledAlert': 'Disabled.',
-  'settings.wake.openAssistant': 'Open Talk to SeCretina',
   'settings.bubble.title': 'Floating bubble',
   'settings.bubble.body':
     '“S” icon over other apps. Needs a new APK: after install, tap “Enable bubble”. Drag to move; tap to open SeCretina.',
+  'settings.bubble.state': 'Status: {state}',
   'settings.bubble.stateOn': 'on',
   'settings.bubble.stateNeedOverlay': 'on, but overlay permission missing',
   'settings.bubble.stateOff': 'off',
   'settings.bubble.enable': 'Enable bubble on screen',
   'settings.bubble.disable': 'Disable bubble',
   'settings.bubble.openOverlay': 'Open overlay permission',
+  'settings.wakeName.title': 'Wake name',
+  'settings.wakeName.body':
+    'With the app open, say “{greeting} {name}” to open the assistant. Wake cannot be turned off — you can only change the name.',
+  'settings.wakeName.label': 'Name',
+  'settings.wakeName.save': 'Save name',
+  'settings.wakeName.saved': 'Saved. Now say “{greeting} {name}”.',
   'settings.reminders.title': 'Agenda reminders',
   'settings.reminders.body':
     'Alerts before CRM appointments and calendar events. Enter minutes before — you can add several.',

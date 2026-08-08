@@ -9,6 +9,7 @@ import {
   Dimensions,
   FlatList,
   Pressable,
+  TextInput,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
@@ -29,18 +30,28 @@ import {
   setSecretinaLanguage,
   type SecretinaLanguage,
 } from '@/services/secretinaLanguage';
+import {
+  enableWakeListenPermanent,
+  getWakeListenEnabled,
+} from '@/services/wakeListenSettings';
+import { getWakeName, setWakeName } from '@/services/secretinaSettings';
+import { ensureSpeechPermission } from '@/services/speechDictate';
 import { prefetchPodeFalar } from '@/services/speech';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
 import { useI18n } from '@/i18n';
 import type { PtBRKey } from '@/i18n/locales/pt-BR';
 
-type SlideKind = 'language' | PermissionKind | 'battery';
+type SlideKind = 'language' | 'wake' | PermissionKind | 'battery';
 
 type PermissionSlide = {
   id: SlideKind;
   titleKey: PtBRKey;
   whyKey: PtBRKey;
-  isOk: (c: PermissionCheck, langChosen: boolean) => boolean;
+  isOk: (
+    c: PermissionCheck,
+    langChosen: boolean,
+    wakeOn: boolean
+  ) => boolean;
 };
 
 const SLIDES: PermissionSlide[] = [
@@ -55,6 +66,12 @@ const SLIDES: PermissionSlide[] = [
     titleKey: 'onboarding.slide.mic.title',
     whyKey: 'onboarding.slide.mic.why',
     isOk: (c) => c.mic,
+  },
+  {
+    id: 'wake',
+    titleKey: 'onboarding.slide.wake.title',
+    whyKey: 'onboarding.slide.wake.why',
+    isOk: (_c, _lang, wakeOn) => wakeOn,
   },
   {
     id: 'notifications',
@@ -98,6 +115,8 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
   const [loadingKind, setLoadingKind] = useState<SlideKind | null>(null);
   const [check, setCheck] = useState<PermissionCheck | null>(null);
   const [langChosen, setLangChosen] = useState(false);
+  const [wakeOn, setWakeOn] = useState(false);
+  const [wakeNameInput, setWakeNameInput] = useState('SeCretina');
   const [selectedLang, setSelectedLang] = useState<SecretinaLanguage>('pt-BR');
   const [error, setError] = useState('');
   const [index, setIndex] = useState(0);
@@ -175,6 +194,22 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       langCheckMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
       langLabel: { fontSize: 16, fontWeight: '700', color: c.text },
       langHint: { fontSize: 13, color: c.textMuted, marginTop: 2 },
+      nameLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: c.text,
+        marginTop: 4,
+      },
+      nameInput: {
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        fontSize: 16,
+        color: c.text,
+        backgroundColor: c.bg,
+      },
       dots: {
         flexDirection: 'row',
         justifyContent: 'center',
@@ -208,8 +243,8 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
   );
 
   const refreshReady = useCallback(
-    (c: PermissionCheck, chosen: boolean) => {
-      setReady(chosen && permissionsAllGranted(c));
+    (c: PermissionCheck, chosen: boolean, wake: boolean) => {
+      setReady(chosen && wake && permissionsAllGranted(c));
     },
     []
   );
@@ -219,13 +254,16 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
     setCheck(c);
     const chosen = await hasChosenSecretinaLanguage();
     setLangChosen(chosen);
+    const wake = await getWakeListenEnabled();
+    setWakeOn(wake);
+    setWakeNameInput(await getWakeName());
     if (chosen) {
       const stored = await getSecretinaLanguage();
       setSelectedLang(stored);
       setUiLanguage(stored);
     }
-    refreshReady(c, chosen);
-    return { c, chosen };
+    refreshReady(c, chosen, wake);
+    return { c, chosen, wake };
   }, [refreshReady, setUiLanguage]);
 
   useEffect(() => {
@@ -234,9 +272,9 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const { c, chosen } = await syncPermissions();
+        const { c, chosen, wake } = await syncPermissions();
         if (cancelled) return;
-        const firstPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
+        const firstPending = SLIDES.findIndex((s) => !s.isOk(c, chosen, wake));
         if (firstPending >= 0) {
           setIndex(firstPending);
           requestAnimationFrame(() => {
@@ -282,8 +320,8 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       } catch {
         void prefetchPodeFalar();
       }
-      const { c, chosen } = await syncPermissions();
-      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
+      const { c, chosen, wake } = await syncPermissions();
+      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen, wake));
       if (nextPending >= 0) {
         setIndex(nextPending);
         listRef.current?.scrollToIndex({
@@ -300,9 +338,43 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
     }
   };
 
+  const enableWakeAndContinue = async () => {
+    setLoadingKind('wake');
+    setError('');
+    try {
+      const ok = await ensureSpeechPermission();
+      if (!ok) {
+        setError(t('onboarding.error.request'));
+        return;
+      }
+      await setWakeName(wakeNameInput);
+      await enableWakeListenPermanent();
+      setWakeOn(true);
+      const { c, chosen, wake } = await syncPermissions();
+      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen, wake));
+      if (nextPending >= 0) {
+        setIndex(nextPending);
+        listRef.current?.scrollToIndex({
+          index: nextPending,
+          animated: true,
+        });
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : t('onboarding.error.request')
+      );
+    } finally {
+      setLoadingKind(null);
+    }
+  };
+
   const requestOne = async (kind: SlideKind) => {
     if (kind === 'language') {
       await saveLanguageAndContinue();
+      return;
+    }
+    if (kind === 'wake') {
+      await enableWakeAndContinue();
       return;
     }
     setLoadingKind(kind);
@@ -313,8 +385,8 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       } else {
         await requestSinglePermission(kind);
       }
-      const { c, chosen } = await syncPermissions();
-      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen));
+      const { c, chosen, wake } = await syncPermissions();
+      const nextPending = SLIDES.findIndex((s) => !s.isOk(c, chosen, wake));
       if (nextPending >= 0 && nextPending !== index) {
         setIndex(nextPending);
         listRef.current?.scrollToIndex({ index: nextPending, animated: true });
@@ -334,9 +406,9 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
   };
 
   const grantedCount = useMemo(() => {
-    if (!check) return langChosen ? 1 : 0;
-    return SLIDES.filter((s) => s.isOk(check, langChosen)).length;
-  }, [check, langChosen]);
+    if (!check) return (langChosen ? 1 : 0) + (wakeOn ? 1 : 0);
+    return SLIDES.filter((s) => s.isOk(check, langChosen, wakeOn)).length;
+  }, [check, langChosen, wakeOn]);
 
   if (Platform.OS !== 'android' || ready) {
     return <>{children}</>;
@@ -361,7 +433,7 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
   };
 
   const current = SLIDES[index] ?? SLIDES[0];
-  const currentOk = current.isOk(c, langChosen);
+  const currentOk = current.isOk(c, langChosen, wakeOn);
   const currentTitle = t(current.titleKey);
 
   return (
@@ -395,7 +467,7 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
           index: i,
         })}
         renderItem={({ item }) => {
-          const ok = item.isOk(c, langChosen);
+          const ok = item.isOk(c, langChosen, wakeOn);
           return (
             <View style={styles.slide}>
               <View style={styles.card}>
@@ -431,6 +503,24 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
                         </Pressable>
                       );
                     })}
+                  </View>
+                ) : item.id === 'wake' ? (
+                  <View style={{ gap: 10 }}>
+                    <Text style={styles.nameLabel}>
+                      {t('onboarding.slide.wake.nameLabel')}
+                    </Text>
+                    <TextInput
+                      style={styles.nameInput}
+                      value={wakeNameInput}
+                      onChangeText={setWakeNameInput}
+                      placeholder={t('onboarding.slide.wake.namePlaceholder')}
+                      autoCapitalize="words"
+                    />
+                    <Text style={[styles.status, ok ? styles.ok : styles.bad]}>
+                      {ok
+                        ? t('onboarding.status.wakeOk')
+                        : t('onboarding.status.wakePending')}
+                    </Text>
                   </View>
                 ) : (
                   <Text style={[styles.status, ok ? styles.ok : styles.bad]}>
@@ -484,6 +574,35 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
             }}
             disabled={loadingKind !== null}
           />
+        ) : current.id === 'wake' ? (
+          <Button
+            title={
+              loadingKind === 'wake'
+                ? t('onboarding.cta.wait')
+                : wakeOn
+                  ? index < SLIDES.length - 1
+                    ? t('onboarding.cta.next')
+                    : t('onboarding.cta.finish')
+                  : t('onboarding.cta.enableWake')
+            }
+            onPress={() => {
+              if (wakeOn && currentOk) {
+                if (index < SLIDES.length - 1) {
+                  const next = index + 1;
+                  setIndex(next);
+                  listRef.current?.scrollToIndex({
+                    index: next,
+                    animated: true,
+                  });
+                } else {
+                  void syncPermissions();
+                }
+              } else {
+                void requestOne('wake');
+              }
+            }}
+            disabled={loadingKind !== null}
+          />
         ) : !currentOk ? (
           <Button
             title={
@@ -513,7 +632,7 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
           />
         )}
 
-        {current.id !== 'language' ? (
+        {current.id !== 'language' && current.id !== 'wake' ? (
           <Button
             title={t('onboarding.cta.openSettings')}
             variant="secondary"
@@ -525,7 +644,9 @@ export function PermissionsGate({ children }: { children: ReactNode }) {
       <Text style={styles.footer}>
         {current.id === 'language'
           ? t('onboarding.footer.language')
-          : t('onboarding.footer.permission')}
+          : current.id === 'wake'
+            ? t('onboarding.footer.wake')
+            : t('onboarding.footer.permission')}
       </Text>
     </View>
   );

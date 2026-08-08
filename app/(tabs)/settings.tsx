@@ -69,15 +69,8 @@ import { wakeGreetingWord } from '@/services/secretinaSpeak';
 export default function SettingsScreen() {
   const { support, isListening, restartDetection, lastPhoneEvent } =
     useCallDetection();
-  const {
-    wakeEnabled,
-    setWakeEnabled,
-    wakeListening,
-    openAssistant,
-    wakeName,
-    refreshWakeName,
-    refreshVoicePipeline,
-  } = useSecretinaAssistant();
+  const { wakeName, refreshWakeName, refreshVoicePipeline } =
+    useSecretinaAssistant();
   const { t, lang, setUiLanguage, refreshLanguage } = useI18n();
   const [bubbleOn, setBubbleOn] = useState(false);
   const [overlayOk, setOverlayOk] = useState(false);
@@ -434,14 +427,14 @@ export default function SettingsScreen() {
 
       {Platform.OS === 'android' ? (
         <View style={styles.card}>
-          <Text style={styles.title}>{t('settings.wake.title')}</Text>
+          <Text style={styles.title}>{t('settings.wakeName.title')}</Text>
           <Text style={styles.body}>
-            {t('settings.wake.body', {
+            {t('settings.wakeName.body', {
               greeting: wakeGreetingWord(lang),
               name: wakeName,
             })}
           </Text>
-          <Text style={styles.label}>{t('settings.wake.nameLabel')}</Text>
+          <Text style={styles.label}>{t('settings.wakeName.label')}</Text>
           <TextInput
             style={styles.input}
             value={wakeNameInput}
@@ -450,70 +443,20 @@ export default function SettingsScreen() {
             autoCapitalize="words"
           />
           <Button
-            title={t('settings.wake.saveName')}
+            title={t('settings.wakeName.save')}
             variant="secondary"
             onPress={async () => {
               await setWakeName(wakeNameInput);
               await refreshWakeName();
               const name = await getWakeName();
               Alert.alert(
-                t('settings.wake.title'),
-                t('settings.wake.saved', {
+                t('settings.wakeName.title'),
+                t('settings.wakeName.saved', {
                   greeting: wakeGreetingWord(lang),
                   name,
                 })
               );
             }}
-            style={styles.mt}
-          />
-          <Text style={[styles.body, styles.mt]}>
-            {t('settings.wake.state', {
-              state: wakeEnabled
-                ? wakeListening
-                  ? t('settings.wake.stateListening')
-                  : t('settings.wake.stateActive')
-                : t('settings.wake.stateOff'),
-            })}
-          </Text>
-          <Button
-            title={
-              wakeEnabled
-                ? t('settings.wake.disable', {
-                    greeting: wakeGreetingWord(lang),
-                    name: wakeName,
-                  })
-                : t('settings.wake.enable', {
-                    greeting: wakeGreetingWord(lang),
-                    name: wakeName,
-                  })
-            }
-            onPress={async () => {
-              try {
-                await setWakeEnabled(!wakeEnabled);
-                Alert.alert(
-                  t('settings.wake.title'),
-                  !wakeEnabled
-                    ? t('settings.wake.enabledAlert', {
-                        greeting: wakeGreetingWord(lang),
-                        name: wakeName,
-                      })
-                    : t('settings.wake.disabledAlert')
-                );
-              } catch (e) {
-                Alert.alert(
-                  t('common.error'),
-                  e instanceof Error ? e.message : t('common.error')
-                );
-              }
-            }}
-            style={styles.mt}
-          />
-          <Button
-            title={t('settings.wake.openAssistant')}
-            variant="secondary"
-            onPress={() =>
-              openAssistant({ autoListen: true, greetFirst: true })
-            }
             style={styles.mt}
           />
         </View>
@@ -524,7 +467,7 @@ export default function SettingsScreen() {
           <Text style={styles.title}>{t('settings.bubble.title')}</Text>
           <Text style={styles.body}>{t('settings.bubble.body')}</Text>
           <Text style={[styles.body, styles.mt]}>
-            {t('settings.wake.state', {
+            {t('settings.bubble.state', {
               state: bubbleOn
                 ? overlayOk
                   ? t('settings.bubble.stateOn')

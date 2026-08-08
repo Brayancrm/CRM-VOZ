@@ -18,6 +18,16 @@ export const ptBR = {
   'onboarding.slide.language.title': 'Idioma da SeCretina',
   'onboarding.slide.language.why':
     'Escolha o idioma em que a assistente fala e em que você responde por voz (comandos, notas e agenda). Os textos do app passam a este idioma.',
+  'onboarding.slide.wake.title': 'Chamamento por voz',
+  'onboarding.slide.wake.why':
+    'Active o chamamento e escolha o nome pelo qual a chama (ex.: SeCretina). Fica sempre ligado — com o app aberto, diga «Olá» + o nome. Não poderá desactivar depois.',
+  'onboarding.slide.wake.nameLabel': 'Nome de chamamento',
+  'onboarding.slide.wake.namePlaceholder': 'SeCretina',
+  'onboarding.cta.enableWake': 'Activar chamamento',
+  'onboarding.status.wakeOk': 'Chamamento activo ✓',
+  'onboarding.status.wakePending': 'Pendente — toque em Activar',
+  'onboarding.footer.wake':
+    'O chamamento fica permanente. Use o microfone com o app aberto.',
   'onboarding.slide.mic.title': 'Microfone',
   'onboarding.slide.mic.why':
     'Precisamos do microfone para ouvir o chamamento («Olá…»), gravar notas por voz e os comandos da assistente.',
@@ -62,7 +72,7 @@ export const ptBR = {
   'contacts.action.talk': 'Falar com SeCretina',
   'contacts.wake.listening': 'Escutando «Olá {name}»…',
   'contacts.wake.active': '«Olá {name}» activo — diga o nome para abrir.',
-  'contacts.wake.disabled': 'Active o chamamento em Ajustes para falar sem tocar.',
+  'contacts.wake.disabled': 'Conclua a configuração inicial para o chamamento por voz.',
   'contacts.empty.search': 'Nenhum resultado para esta pesquisa.',
   'contacts.empty.default': 'Nenhum contacto. Toque em + Novo ou Importar.',
   'contacts.note.transcription': '· transcrição',
@@ -107,11 +117,12 @@ export const ptBR = {
 
   'assistant.title': 'Falar com SeCretina',
   'assistant.subtitle':
-    'Diga «Olá {name}» ou use o botão.\nEx.: «o que tenho amanhã», «cancela o com a Maria», «agenda com Ana amanhã às 15»',
+    'Diga «Olá {name}» ou use o botão.\nNuma só frase: nota, agenda, cancelar ou remarcar — ex.: «agenda com Ana amanhã às 15 e anota que é sobre o contrato»',
   'assistant.phase.speaking': 'A falar…',
   'assistant.phase.processing': 'A processar…',
   'assistant.listening.command': 'Microfone activo — fale agora o comando',
   'assistant.listening.pick': 'Microfone activo — diga o número ou o sobrenome',
+  'assistant.listening.fillSlot': 'Microfone activo — diga só o que falta',
   'assistant.listening.yesNo': 'Sim / No / Yes…',
   'assistant.listening.dictate': 'Microfone activo — dite a nota do agendamento',
   'assistant.label.note': 'Nota',
@@ -120,6 +131,8 @@ export const ptBR = {
     'Quer acrescentar uma nota a este agendamento?',
   'assistant.label.typed': 'Ou digite / confirme o comando',
   'assistant.label.pickContact': 'Escolha o contacto — diga o número ou toque',
+  'assistant.label.pickSchedule':
+    'Escolha o agendamento — diga o número ou toque',
   'assistant.savedInAgenda': 'Guardado na Agenda do app.',
   'assistant.cta.stop': 'Parar e executar',
   'assistant.cta.speakNow': 'Falar agora',
@@ -152,30 +165,22 @@ export const ptBR = {
   'contact.duplicateTitle': 'Duplicado',
   'contact.duplicateBody': 'Já existe contacto com este telefone.',
 
-  'settings.wake.title': 'Chamamento por voz',
-  'settings.wake.body':
-    'Com o app aberto, diga «{greeting} {name}». Ela responde e abre o microfone. Não funciona com o ecrã bloqueado.',
-  'settings.wake.nameLabel': 'Nome de chamamento',
-  'settings.wake.saveName': 'Guardar nome',
-  'settings.wake.saved': 'Agora diga «{greeting} {name}».',
-  'settings.wake.state': 'Estado: {state}',
-  'settings.wake.stateListening': 'escutando…',
-  'settings.wake.stateActive': 'activo (à espera)',
-  'settings.wake.stateOff': 'desligado',
-  'settings.wake.disable': 'Desactivar «{greeting} {name}»',
-  'settings.wake.enable': 'Activar «{greeting} {name}»',
-  'settings.wake.enabledAlert': 'Activo. Diga «{greeting} {name}» com o app aberto.',
-  'settings.wake.disabledAlert': 'Desactivado.',
-  'settings.wake.openAssistant': 'Abrir Falar com SeCretina',
   'settings.bubble.title': 'Bolha flutuante',
   'settings.bubble.body':
     'Ícone «S» solto sobre outros apps. Requer APK novo: depois de instalar, toque em «Activar bolha». Arraste para mover; toque para abrir o SeCretina.',
+  'settings.bubble.state': 'Estado: {state}',
   'settings.bubble.stateOn': 'activa',
   'settings.bubble.stateNeedOverlay': 'activa, mas falta permissão de overlay',
   'settings.bubble.stateOff': 'desligada',
   'settings.bubble.enable': 'Activar bolha na tela',
   'settings.bubble.disable': 'Desactivar bolha',
   'settings.bubble.openOverlay': 'Abrir permissão de overlay',
+  'settings.wakeName.title': 'Nome de chamamento',
+  'settings.wakeName.body':
+    'Com o app aberto, diga «{greeting} {name}» para abrir a assistente. O chamamento não se desactiva — só pode mudar o nome.',
+  'settings.wakeName.label': 'Nome',
+  'settings.wakeName.save': 'Guardar nome',
+  'settings.wakeName.saved': 'Guardado. Agora diga «{greeting} {name}».',
   'settings.reminders.title': 'Lembretes da agenda',
   'settings.reminders.body':
     'Avisos antes de compromissos do CRM e do calendário. Indique minutos antes — pode adicionar vários.',

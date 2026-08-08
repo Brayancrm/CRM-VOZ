@@ -204,24 +204,18 @@ export function SecretinaAssistantProvider({
     }
   }, []);
 
+  /** Só activa — o chamamento é permanente (carrossel); desactivar é ignorado. */
   const setWakeEnabled = useCallback(async (enabled: boolean) => {
-    if (enabled) {
-      const ok = await ensureSpeechPermission();
-      if (!ok) {
-        throw new Error(
-          'Permita microfone e reconhecimento de voz para o chamamento.'
-        );
-      }
+    if (!enabled) return;
+    const ok = await ensureSpeechPermission();
+    if (!ok) {
+      throw new Error(
+        'Permita microfone e reconhecimento de voz para o chamamento.'
+      );
     }
-    await setWakeListenEnabled(enabled);
-    wakeEnabledRef.current = enabled;
-    setWakeEnabledState(enabled);
-    if (!enabled) {
-      abortSpeechRecognition();
-      setWakeListening(false);
-      wakeListeningRef.current = false;
-      wakeBufferRef.current = [];
-    }
+    await setWakeListenEnabled(true);
+    wakeEnabledRef.current = true;
+    setWakeEnabledState(true);
   }, []);
 
   const startWakeListen = useCallback(() => {

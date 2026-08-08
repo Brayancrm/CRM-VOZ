@@ -20,6 +20,13 @@ import {
 } from '@/services/secretinaAgendaVoice';
 import { scheduleCallReminders } from '@/services/notifications';
 import {
+  findMissingSlot,
+  mergeSlotFill,
+  questionForMissingSlot,
+  type MissingSlot,
+  type PendingCommandDraft,
+} from '@/services/secretinaDraft';
+import {
   getSecretinaLanguage,
   type SecretinaLanguage,
 } from '@/services/secretinaLanguage';
@@ -28,7 +35,6 @@ import {
   msgContactChosenMissing,
   msgContactNotFound,
   msgDateInPast,
-  msgMissingNote,
   msgNoAction,
   msgNoCommand,
   msgNoteCreated,
@@ -49,8 +55,10 @@ import {
   buildAmbiguousScreenMessage,
   buildAmbiguousSpeakMessage,
 } from '@/utils/contactChoice';
-import type { Contact } from '@/types';
+import type { Contact, ScheduledCallWithContact } from '@/types';
 import type { AgendaVoiceItem } from '@/services/secretinaAgendaVoice';
+
+export type { MissingSlot, PendingCommandDraft };
 
 export type AssistantSuccess = {
   ok: true;
@@ -62,6 +70,7 @@ export type AssistantSuccess = {
   kind: 'note' | 'schedule' | 'mixed' | 'list' | 'cancel' | 'reschedule';
   spokenText: string;
   message: string;
+  /** Só pede nota extra se o agendamento foi criado sem texto. */
   askScheduleNote?: boolean;
   agendaItems?: AgendaVoiceItem[];
 };
@@ -72,13 +81,24 @@ export type AssistantFailure = {
   message: string;
   speakMessage?: string;
   ambiguous?: Contact[];
+  /** Agendamentos ambíguos (cancelar/remarcar) — escolha por número. */
+  ambiguousSchedules?: ScheduledCallWithContact[];
   pendingText?: string;
+  /** Acções a reexecutar após escolha de contacto/agenda ou preenchimento de slot. */
+  pendingActions?: AiAction[];
+  pendingReply?: string;
+  /** Pedido parcial: falta só um campo; o mic reabre para preencher. */
+  needSlot?: PendingCommandDraft;
 };
 
 export type AssistantResult = AssistantSuccess | AssistantFailure;
 
 export type RunCommandOptions = {
   contactId?: string;
+  scheduledId?: string;
+  /** Reexecuta rascunho já interpretado (após escolha de contacto / slot). */
+  draftActions?: AiAction[];
+  draftReply?: string;
 };
 
 function resolveContact(
@@ -218,43 +238,89 @@ async function runListAgenda(
   };
 }
 
+function needSlotFailure(
+  spokenText: string,
+  actions: AiAction[],
+  missing: MissingSlot,
+  lang: SecretinaLanguage,
+  clarification?: string,
+  reply?: string
+): AssistantFailure {
+  const question = questionForMissingSlot(missing, lang, clarification);
+  return {
+    ok: false,
+    spokenText,
+    message: question,
+    speakMessage: question,
+    needSlot: {
+      originalText: spokenText,
+      actions,
+      missing,
+      question,
+      reply,
+    },
+  };
+}
+
 async function runCancelSchedule(
   spokenText: string,
   action: Extract<AiAction, { type: 'cancel_schedule' }>,
   reply: string,
-  lang: SecretinaLanguage
+  lang: SecretinaLanguage,
+  options?: RunCommandOptions
 ): Promise<AssistantResult> {
-  const candidates = await findScheduleCandidates({
-    contactQuery: action.contactQuery,
-    whenRaw: action.whenRaw,
-  });
-  if (candidates.length === 0) {
-    return {
-      ok: false,
-      spokenText,
-      message: msgScheduleNotFound(lang),
-    };
+  let target: ScheduledCallWithContact | undefined;
+
+  if (options?.scheduledId) {
+    const broad = await findScheduleCandidates({
+      contactQuery: action.contactQuery,
+    });
+    target = broad.find((c) => c.id === options.scheduledId);
+    if (!target) {
+      const wider = await findScheduleCandidates({});
+      target = wider.find((c) => c.id === options.scheduledId);
+    }
   }
-  if (candidates.length > 1) {
-    const amb = speakAmbiguousSchedules(candidates, lang);
-    return {
-      ok: false,
-      spokenText,
-      message: amb,
-      speakMessage: amb,
-    };
+
+  if (!target) {
+    const candidates = await findScheduleCandidates({
+      contactQuery: action.contactQuery,
+      whenRaw: action.whenRaw,
+    });
+    if (candidates.length === 0) {
+      return {
+        ok: false,
+        spokenText,
+        message: msgScheduleNotFound(lang),
+      };
+    }
+    if (candidates.length > 1) {
+      const amb = speakAmbiguousSchedules(candidates, lang);
+      return {
+        ok: false,
+        spokenText,
+        message: amb,
+        speakMessage: amb,
+        ambiguousSchedules: candidates.slice(0, 8),
+        pendingText: spokenText,
+        pendingActions: [action],
+        pendingReply: reply,
+      };
+    }
+    target = candidates[0];
   }
-  const msg = await cancelScheduleVoice(candidates[0], lang);
+
+  const msg = await cancelScheduleVoice(target, lang);
   return {
     ok: true,
     kind: 'cancel',
     contact: {
-      id: candidates[0].contact_id,
-      name: candidates[0].contact_name,
-      phone_normalized: candidates[0].phone_normalized,
+      id: target.contact_id,
+      name: target.contact_name,
+      phone_normalized: target.phone_normalized,
       created_at: 0,
     },
-    scheduledId: candidates[0].id,
+    scheduledId: target.id,
     spokenText,
     message: reply.trim() || msg,
   };
@@ -264,15 +330,19 @@ async function runReschedule(
   spokenText: string,
   action: AiActionReschedule,
   reply: string,
-  lang: SecretinaLanguage
+  lang: SecretinaLanguage,
+  options?: RunCommandOptions
 ): Promise<AssistantResult> {
   const newAt = resolveWhenMs(action);
   if (newAt == null) {
-    return {
-      ok: false,
+    return needSlotFailure(
       spokenText,
-      message: msgRescheduleNeedWhen(lang),
-    };
+      [action],
+      'new_when',
+      lang,
+      msgRescheduleNeedWhen(lang),
+      reply
+    );
   }
   if (newAt < Date.now() + 60_000) {
     return {
@@ -282,38 +352,60 @@ async function runReschedule(
     };
   }
 
-  const candidates = await findScheduleCandidates({
-    contactQuery: action.contactQuery,
-    whenRaw: action.fromWhenRaw,
-  });
-  if (candidates.length === 0) {
-    return {
-      ok: false,
-      spokenText,
-      message: msgRescheduleNotFound(lang),
-    };
-  }
-  if (candidates.length > 1) {
-    const amb = speakAmbiguousSchedules(candidates, lang);
-    return {
-      ok: false,
-      spokenText,
-      message: amb,
-      speakMessage: amb,
-    };
+  let target: ScheduledCallWithContact | undefined;
+  if (options?.scheduledId) {
+    const broad = await findScheduleCandidates({
+      contactQuery: action.contactQuery,
+      whenRaw: action.fromWhenRaw,
+    });
+    target = broad.find((c) => c.id === options.scheduledId);
+    if (!target) {
+      const wider = await findScheduleCandidates({
+        contactQuery: action.contactQuery,
+      });
+      target = wider.find((c) => c.id === options.scheduledId);
+    }
   }
 
-  const msg = await rescheduleVoice(candidates[0], newAt, lang);
+  if (!target) {
+    const candidates = await findScheduleCandidates({
+      contactQuery: action.contactQuery,
+      whenRaw: action.fromWhenRaw,
+    });
+    if (candidates.length === 0) {
+      return {
+        ok: false,
+        spokenText,
+        message: msgRescheduleNotFound(lang),
+      };
+    }
+    if (candidates.length > 1) {
+      const amb = speakAmbiguousSchedules(candidates, lang);
+      return {
+        ok: false,
+        spokenText,
+        message: amb,
+        speakMessage: amb,
+        ambiguousSchedules: candidates.slice(0, 8),
+        pendingText: spokenText,
+        pendingActions: [action],
+        pendingReply: reply,
+      };
+    }
+    target = candidates[0];
+  }
+
+  const msg = await rescheduleVoice(target, newAt, lang);
   return {
     ok: true,
     kind: 'reschedule',
     contact: {
-      id: candidates[0].contact_id,
-      name: candidates[0].contact_name,
-      phone_normalized: candidates[0].phone_normalized,
+      id: target.contact_id,
+      name: target.contact_name,
+      phone_normalized: target.phone_normalized,
       created_at: 0,
     },
-    scheduledId: candidates[0].id,
+    scheduledId: target.id,
     scheduledAt: newAt,
     spokenText,
     message: reply.trim() || msg,
@@ -325,19 +417,32 @@ async function runAiActions(
   actions: AiAction[],
   reply: string,
   lang: SecretinaLanguage,
-  options?: RunCommandOptions
+  options?: RunCommandOptions,
+  clarification?: string
 ): Promise<AssistantResult> {
+  const missing = findMissingSlot(actions);
+  if (missing) {
+    return needSlotFailure(
+      spokenText,
+      actions,
+      missing,
+      lang,
+      clarification,
+      reply
+    );
+  }
+
   const list = actions.find((a) => a.type === 'list_agenda');
   if (list && list.type === 'list_agenda') {
     return runListAgenda(spokenText, list, reply, lang);
   }
   const cancel = actions.find((a) => a.type === 'cancel_schedule');
   if (cancel && cancel.type === 'cancel_schedule') {
-    return runCancelSchedule(spokenText, cancel, reply, lang);
+    return runCancelSchedule(spokenText, cancel, reply, lang, options);
   }
   const move = actions.find((a) => a.type === 'reschedule');
   if (move && move.type === 'reschedule') {
-    return runReschedule(spokenText, move, reply, lang);
+    return runReschedule(spokenText, move, reply, lang, options);
   }
 
   const contacts = await listContacts();
@@ -349,6 +454,7 @@ async function runAiActions(
   let scheduledAt: number | undefined;
   let didNote = false;
   let didSchedule = false;
+  let scheduleHadNote = false;
 
   for (const action of actions) {
     if (action.type !== 'note' && action.type !== 'schedule') continue;
@@ -364,6 +470,8 @@ async function runAiActions(
         ...resolved.result,
         spokenText,
         pendingText: spokenText,
+        pendingActions: actions,
+        pendingReply: reply,
       };
     }
     const contact = resolved.contact;
@@ -371,11 +479,14 @@ async function runAiActions(
 
     if (action.type === 'note') {
       if (!action.noteBody?.trim()) {
-        return {
-          ok: false,
+        return needSlotFailure(
           spokenText,
-          message: msgMissingNote(lang),
-        };
+          actions,
+          'note_body',
+          lang,
+          clarification,
+          reply
+        );
       }
       const created = await createNoteAction(contact, action.noteBody.trim());
       noteId = created.noteId;
@@ -385,11 +496,14 @@ async function runAiActions(
     } else {
       const atMs = resolveWhenMs(action);
       if (atMs == null) {
-        return {
-          ok: false,
+        return needSlotFailure(
           spokenText,
-          message: msgBadDateTime(lang),
-        };
+          actions,
+          'when',
+          lang,
+          clarification,
+          reply
+        );
       }
       if (atMs < Date.now() + 60_000) {
         return {
@@ -399,6 +513,7 @@ async function runAiActions(
         };
       }
       const scheduleNote = (action.note ?? '').trim();
+      scheduleHadNote = scheduleNote.length > 0;
       const created = await createScheduleAction(contact, atMs, scheduleNote);
       scheduledId = created.scheduledId;
       scheduledAt = created.scheduledAt;
@@ -425,12 +540,18 @@ async function runAiActions(
     kind,
     contact: lastContact,
     noteId,
-    noteBody: didNote ? noteBody : undefined,
+    noteBody: didNote
+      ? noteBody
+      : scheduleHadNote
+        ? (actions.find((a) => a.type === 'schedule' && a.note?.trim()) as
+            | AiActionSchedule
+            | undefined)?.note?.trim()
+        : undefined,
     scheduledId,
     scheduledAt,
     spokenText,
     message: reply.trim() || messages.join('. ') + '.',
-    askScheduleNote: kind === 'schedule',
+    askScheduleNote: kind === 'schedule' && !scheduleHadNote,
   };
 }
 
@@ -449,18 +570,35 @@ export async function runSecretinaVoiceCommand(
     };
   }
 
+  if (options?.draftActions && options.draftActions.length > 0) {
+    return runAiActions(
+      trimmed,
+      options.draftActions,
+      options.draftReply ?? '',
+      lang,
+      options
+    );
+  }
+
   try {
     const ai = await interpretCommandWithOpenAi(trimmed);
     if (ai) {
-      if (ai.clarification && ai.actions.length === 0) {
+      if (ai.actions.length > 0) {
+        return runAiActions(
+          trimmed,
+          ai.actions,
+          ai.reply,
+          lang,
+          options,
+          ai.clarification
+        );
+      }
+      if (ai.clarification) {
         return {
           ok: false,
           spokenText: trimmed,
           message: ai.clarification,
         };
-      }
-      if (ai.actions.length > 0) {
-        return runAiActions(trimmed, ai.actions, ai.reply, lang, options);
       }
       if (ai.reply) {
         return {
@@ -507,7 +645,8 @@ export async function runSecretinaVoiceCommand(
         whenRaw: parsed.whenRaw,
       },
       '',
-      lang
+      lang,
+      options
     );
   }
 
@@ -521,7 +660,8 @@ export async function runSecretinaVoiceCommand(
         whenRaw: parsed.whenRaw,
       },
       '',
-      lang
+      lang,
+      options
     );
   }
 
@@ -543,11 +683,18 @@ export async function runSecretinaVoiceCommand(
 
   if (parsed.type === 'note') {
     if (!parsed.noteBody.trim()) {
-      return {
-        ok: false,
-        spokenText: trimmed,
-        message: msgMissingNote(lang),
-      };
+      return needSlotFailure(
+        trimmed,
+        [
+          {
+            type: 'note',
+            contactQuery: parsed.contactQuery,
+            noteBody: '',
+          },
+        ],
+        'note_body',
+        lang
+      );
     }
     const created = await createNoteAction(contact, parsed.noteBody);
     return {
@@ -563,11 +710,18 @@ export async function runSecretinaVoiceCommand(
 
   const at = parseSpokenDateTime(parsed.whenRaw);
   if (!at) {
-    return {
-      ok: false,
-      spokenText: trimmed,
-      message: msgBadDateTime(lang),
-    };
+    return needSlotFailure(
+      trimmed,
+      [
+        {
+          type: 'schedule',
+          contactQuery: parsed.contactQuery,
+          whenRaw: parsed.whenRaw || undefined,
+        },
+      ],
+      'when',
+      lang
+    );
   }
   const atMs = at.getTime();
   if (atMs < Date.now() + 60_000) {
@@ -589,6 +743,35 @@ export async function runSecretinaVoiceCommand(
     message: msgScheduled(lang, contact.name, atMs),
     askScheduleNote: true,
   };
+}
+
+/** Preenche só o campo em falta e reexecuta o rascunho. */
+export async function runSecretinaSlotFill(
+  draft: PendingCommandDraft,
+  fillText: string,
+  options?: RunCommandOptions
+): Promise<AssistantResult> {
+  const lang = await getSecretinaLanguage();
+  const fill = fillText.trim();
+  if (!fill) {
+    return needSlotFailure(
+      draft.originalText,
+      draft.actions,
+      draft.missing,
+      lang,
+      draft.question,
+      draft.reply
+    );
+  }
+
+  const merged = mergeSlotFill(draft.actions, draft.missing, fill);
+  return runAiActions(
+    draft.originalText,
+    merged,
+    draft.reply ?? '',
+    lang,
+    options
+  );
 }
 
 export async function updateScheduledCallNote(

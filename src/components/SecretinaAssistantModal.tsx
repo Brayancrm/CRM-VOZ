@@ -20,10 +20,14 @@ import { DictateNoteButton } from '@/components/DictateNoteButton';
 import { useThemedStyles } from '@/hooks/useThemedStyles';
 import { speakText, stopSpeaking } from '@/services/speech';
 import {
+  runSecretinaSlotFill,
   runSecretinaVoiceCommand,
   updateScheduledCallNote,
   type AssistantResult,
+  type PendingCommandDraft,
 } from '@/services/secretinaAssistant';
+import { listeningHintForSlot } from '@/services/secretinaDraft';
+import type { AiAction } from '@/services/openaiInterpret';
 import { showAppAlert } from '@/utils/alert';
 import { useSecretinaAssistant } from '@/context/SecretinaAssistantContext';
 import {
@@ -54,13 +58,15 @@ import {
   unnamedContact,
 } from '@/services/secretinaSpeak';
 import { formatDateTime } from '@/utils/date';
-import type { Contact } from '@/types';
+import type { Contact, ScheduledCallWithContact } from '@/types';
 import { useI18n } from '@/i18n';
 
 type Phase = 'idle' | 'speaking' | 'listening' | 'processing' | 'done' | 'error';
 type ListenMode =
   | 'command'
   | 'pick_contact'
+  | 'pick_schedule'
+  | 'fill_slot'
   | 'ask_schedule_note'
   | 'dictate_schedule_note';
 
@@ -68,8 +74,9 @@ type ListenMode =
 const COMMAND_SILENCE_MS = 3800;
 /** Na escolha de contacto, espera um pouco mais pela resposta. */
 const PICK_SILENCE_MS = 4500;
-/** Sim/não — resposta curta. */
+/** Sim/não ou slot curto (hora). */
 const YES_NO_SILENCE_MS = 2800;
+const SLOT_SILENCE_MS = 3000;
 
 type Props = {
   visible: boolean;
@@ -93,6 +100,9 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
   const [result, setResult] = useState<AssistantResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [ambiguous, setAmbiguous] = useState<Contact[]>([]);
+  const [ambiguousSchedules, setAmbiguousSchedules] = useState<
+    ScheduledCallWithContact[]
+  >([]);
   const [pendingText, setPendingText] = useState('');
   const [scheduleNotePreview, setScheduleNotePreview] = useState('');
   const phaseRef = useRef<Phase>('idle');
@@ -103,7 +113,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
   const startedAtRef = useRef(0);
   const listenModeRef = useRef<ListenMode>('command');
   const ambiguousRef = useRef<Contact[]>([]);
+  const ambiguousSchedulesRef = useRef<ScheduledCallWithContact[]>([]);
   const pendingTextRef = useRef('');
+  const pendingActionsRef = useRef<AiAction[] | null>(null);
+  const pendingReplyRef = useRef('');
+  const draftRef = useRef<PendingCommandDraft | null>(null);
   const speakingLockRef = useRef(false);
   const resultRef = useRef<AssistantResult | null>(null);
   /** Incrementa em cada reset/início — anula TTS/processamento antigo. */
@@ -279,7 +293,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     liveTranscriptRef.current = '';
     listenModeRef.current = 'command';
     ambiguousRef.current = [];
+    ambiguousSchedulesRef.current = [];
     pendingTextRef.current = '';
+    pendingActionsRef.current = null;
+    pendingReplyRef.current = '';
+    draftRef.current = null;
     resultRef.current = null;
     setMicBusy(false);
     setPhaseSafe('idle');
@@ -288,6 +306,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     setResult(null);
     setErrorMsg('');
     setAmbiguous([]);
+    setAmbiguousSchedules([]);
     setPendingText('');
     setScheduleNotePreview('');
   }, [setPhaseSafe, setMicBusy, unlockSession]);
@@ -307,14 +326,16 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       setMicBusy(true);
       setPhaseSafe('listening');
       const lang = await getSecretinaLanguage();
-      const hint =
-        mode === 'pick_contact'
-          ? t('assistant.listening.pick')
-          : mode === 'ask_schedule_note'
-            ? yesNoHint(lang)
-            : mode === 'dictate_schedule_note'
-              ? t('assistant.listening.dictate')
-              : t('assistant.listening.command');
+      let hint = t('assistant.listening.command');
+      if (mode === 'pick_contact' || mode === 'pick_schedule') {
+        hint = t('assistant.listening.pick');
+      } else if (mode === 'fill_slot' && draftRef.current) {
+        hint = listeningHintForSlot(draftRef.current.missing, lang);
+      } else if (mode === 'ask_schedule_note') {
+        hint = yesNoHint(lang);
+      } else if (mode === 'dictate_schedule_note') {
+        hint = t('assistant.listening.dictate');
+      }
       setLiveTranscript(hint);
       liveTranscriptRef.current = '';
       await prepareMicForRecognition();
@@ -324,7 +345,10 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       try {
         await startCommandRecognition({
           longUtterance:
-            mode === 'command' || mode === 'dictate_schedule_note',
+            mode === 'command' ||
+            mode === 'dictate_schedule_note' ||
+            (mode === 'fill_slot' &&
+              draftRef.current?.missing === 'note_body'),
         });
       } catch (e) {
         setMicBusy(false);
@@ -345,13 +369,20 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       if (outcome.ok) {
         setAmbiguous([]);
         ambiguousRef.current = [];
+        setAmbiguousSchedules([]);
+        ambiguousSchedulesRef.current = [];
         setPendingText('');
         pendingTextRef.current = '';
+        pendingActionsRef.current = null;
+        pendingReplyRef.current = '';
+        draftRef.current = null;
         listenModeRef.current = 'command';
         setMicBusy(false);
 
         const shouldAskNote =
-          outcome.kind === 'schedule' && Boolean(outcome.scheduledId);
+          outcome.kind === 'schedule' &&
+          Boolean(outcome.scheduledId) &&
+          Boolean(outcome.askScheduleNote);
 
         if (shouldAskNote) {
           const withAsk = { ...outcome, askScheduleNote: true };
@@ -380,9 +411,14 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       if (outcome.ambiguous && outcome.ambiguous.length > 0) {
         setAmbiguous(outcome.ambiguous);
         ambiguousRef.current = outcome.ambiguous;
+        setAmbiguousSchedules([]);
+        ambiguousSchedulesRef.current = [];
         const pending = outcome.pendingText ?? outcome.spokenText;
         setPendingText(pending);
         pendingTextRef.current = pending;
+        pendingActionsRef.current = outcome.pendingActions ?? null;
+        pendingReplyRef.current = outcome.pendingReply ?? '';
+        draftRef.current = null;
         setErrorMsg(outcome.message);
         setPhaseSafe('error');
         const toSpeak =
@@ -395,11 +431,59 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         return;
       }
 
-      // Erro recuperável (sem nome, sem data, etc.): fala e reabre o mic
+      if (outcome.ambiguousSchedules && outcome.ambiguousSchedules.length > 0) {
+        setAmbiguous([]);
+        ambiguousRef.current = [];
+        setAmbiguousSchedules(outcome.ambiguousSchedules);
+        ambiguousSchedulesRef.current = outcome.ambiguousSchedules;
+        const pending = outcome.pendingText ?? outcome.spokenText;
+        setPendingText(pending);
+        pendingTextRef.current = pending;
+        pendingActionsRef.current = outcome.pendingActions ?? null;
+        pendingReplyRef.current = outcome.pendingReply ?? '';
+        draftRef.current = null;
+        setErrorMsg(outcome.message);
+        setPhaseSafe('error');
+        const toSpeak =
+          outcome.speakMessage?.trim() ||
+          outcome.message.split('\n')[0] ||
+          outcome.message;
+        await speakThen(toSpeak);
+        if (gen !== sessionGenRef.current) return;
+        await openMicForMode('pick_schedule');
+        return;
+      }
+
+      if (outcome.needSlot) {
+        setAmbiguous([]);
+        ambiguousRef.current = [];
+        setAmbiguousSchedules([]);
+        ambiguousSchedulesRef.current = [];
+        draftRef.current = outcome.needSlot;
+        pendingTextRef.current = outcome.needSlot.originalText;
+        setPendingText(outcome.needSlot.originalText);
+        pendingActionsRef.current = outcome.needSlot.actions;
+        pendingReplyRef.current = outcome.needSlot.reply ?? '';
+        setErrorMsg(outcome.needSlot.question);
+        setPhaseSafe('error');
+        await speakThen(outcome.needSlot.question);
+        if (gen !== sessionGenRef.current) return;
+        await new Promise((r) => setTimeout(r, 300));
+        if (gen !== sessionGenRef.current) return;
+        await openMicForMode('fill_slot');
+        return;
+      }
+
+      // Erro recuperável (sem nome, etc.): fala e reabre o mic
       setAmbiguous([]);
       ambiguousRef.current = [];
+      setAmbiguousSchedules([]);
+      ambiguousSchedulesRef.current = [];
       setPendingText('');
       pendingTextRef.current = '';
+      pendingActionsRef.current = null;
+      pendingReplyRef.current = '';
+      draftRef.current = null;
       listenModeRef.current = 'command';
       setPhaseSafe('error');
       setErrorMsg(outcome.message);
@@ -443,12 +527,59 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     []
   );
 
+  const resolvePickSchedule = useCallback(
+    (spoken: string): ScheduledCallWithContact | null => {
+      const candidates = ambiguousSchedulesRef.current;
+      if (!candidates.length) return null;
+      const byNumber = parseSpokenChoiceIndex(spoken, candidates.length);
+      if (byNumber != null) {
+        return candidates[byNumber - 1] ?? null;
+      }
+      return null;
+    },
+    []
+  );
+
   const processCommand = useCallback(
-    async (text: string, contactId?: string) => {
+    async (text: string, contactId?: string, scheduledId?: string) => {
       const trimmed = text.trim();
       if (!trimmed || processingRef.current) return;
       // Nunca deixar TTS preso bloquear comandos
       speakingLockRef.current = false;
+
+      // Preencher só o campo em falta (hora, texto da nota, …)
+      if (listenModeRef.current === 'fill_slot' && !contactId && !scheduledId) {
+        processingRef.current = true;
+        clearSilenceTimer();
+        abortSpeechRecognition();
+        setPhaseSafe('processing');
+        setLiveTranscript(trimmed);
+        liveTranscriptRef.current = trimmed;
+        try {
+          const draft = draftRef.current;
+          if (!draft) {
+            listenModeRef.current = 'command';
+            await openMicForMode('command');
+            return;
+          }
+          const outcome = await runSecretinaSlotFill(draft, trimmed);
+          await applyOutcome(outcome);
+        } catch (e) {
+          console.warn('SeCretina slot fill', e);
+          setMicBusy(false);
+          setPhaseSafe('error');
+          setErrorMsg(
+            e instanceof Error
+              ? e.message
+              : msgProcessFailSpeak(await getSecretinaLanguage())
+          );
+          await speakThen(msgProcessFailSpeak(await getSecretinaLanguage()));
+          await openMicForMode('fill_slot');
+        } finally {
+          processingRef.current = false;
+        }
+        return;
+      }
 
       // Sim/não após agendamento
       if (listenModeRef.current === 'ask_schedule_note' && !contactId) {
@@ -510,11 +641,11 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         liveTranscriptRef.current = trimmed;
         try {
           const current = resultRef.current;
-          const scheduledId =
+          const sid =
             current?.ok && current.kind === 'schedule'
               ? current.scheduledId
               : undefined;
-          if (!scheduledId) {
+          if (!sid) {
             const lang = await getSecretinaLanguage();
             setMicBusy(false);
             setPhaseSafe('error');
@@ -522,7 +653,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             await speakThen(msgScheduleMissingForNote(lang));
             return;
           }
-          const saved = await updateScheduledCallNote(scheduledId, trimmed);
+          const saved = await updateScheduledCallNote(sid, trimmed);
           if (!saved.ok) {
             setMicBusy(false);
             setPhaseSafe('error');
@@ -550,6 +681,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
 
       if (
         !contactId &&
+        !scheduledId &&
         listenModeRef.current === 'command' &&
         (phaseRef.current === 'processing' || phaseRef.current === 'done')
       ) {
@@ -570,6 +702,20 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         listenModeRef.current = 'command';
       }
 
+      // Modo escolha de agendamento por voz
+      if (listenModeRef.current === 'pick_schedule' && !scheduledId) {
+        const picked = resolvePickSchedule(trimmed);
+        if (!picked) {
+          clearSilenceTimer();
+          liveTranscriptRef.current = '';
+          await speakThen(msgPickNotUnderstood(await getSecretinaLanguage()));
+          await openMicForMode('pick_schedule');
+          return;
+        }
+        scheduledId = picked.id;
+        listenModeRef.current = 'command';
+      }
+
       processingRef.current = true;
       clearSilenceTimer();
       abortSpeechRecognition();
@@ -580,16 +726,26 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
         setAmbiguous([]);
         ambiguousRef.current = [];
       }
+      if (!scheduledId) {
+        setAmbiguousSchedules([]);
+        ambiguousSchedulesRef.current = [];
+      }
 
       try {
         const commandText =
-          contactId && pendingTextRef.current.trim()
+          (contactId || scheduledId) && pendingTextRef.current.trim()
             ? pendingTextRef.current.trim()
             : trimmed;
-        const outcome = await runSecretinaVoiceCommand(
-          commandText,
-          contactId ? { contactId } : undefined
-        );
+        const outcome = await runSecretinaVoiceCommand(commandText, {
+          ...(contactId ? { contactId } : {}),
+          ...(scheduledId ? { scheduledId } : {}),
+          ...(pendingActionsRef.current?.length
+            ? {
+                draftActions: pendingActionsRef.current,
+                draftReply: pendingReplyRef.current,
+              }
+            : {}),
+        });
         await applyOutcome(outcome);
       } catch (e) {
         console.warn('SeCretina processCommand', e);
@@ -615,6 +771,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       setPhaseSafe,
       applyOutcome,
       resolvePickContact,
+      resolvePickSchedule,
       speakThen,
       openMicForMode,
       setMicBusy,
@@ -628,16 +785,26 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     void processCommand(text, contact.id);
   };
 
+  const pickSchedule = (item: ScheduledCallWithContact) => {
+    const text = pendingTextRef.current.trim() || pendingText.trim() || typedFallback.trim();
+    if (!text) return;
+    listenModeRef.current = 'command';
+    void processCommand(text, undefined, item.id);
+  };
+
   const scheduleProcessAfterSilence = useCallback(
     (text: string) => {
       clearSilenceTimer();
       if (!text.trim()) return;
       const delay =
-        listenModeRef.current === 'pick_contact'
+        listenModeRef.current === 'pick_contact' ||
+        listenModeRef.current === 'pick_schedule'
           ? PICK_SILENCE_MS
           : listenModeRef.current === 'ask_schedule_note'
             ? YES_NO_SILENCE_MS
-            : COMMAND_SILENCE_MS;
+            : listenModeRef.current === 'fill_slot'
+              ? SLOT_SILENCE_MS
+              : COMMAND_SILENCE_MS;
       silenceTimerRef.current = setTimeout(() => {
         if (
           phaseRef.current === 'listening' &&
@@ -701,6 +868,25 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
       return;
     }
 
+    if (listenModeRef.current === 'pick_schedule') {
+      void (async () => {
+        await speakThen(msgPickNotUnderstood(await getSecretinaLanguage()));
+        await openMicForMode('pick_schedule');
+      })();
+      return;
+    }
+
+    if (listenModeRef.current === 'fill_slot') {
+      void (async () => {
+        const q =
+          draftRef.current?.question ||
+          (await getCanSpeakPhrase());
+        await speakThen(q);
+        await openMicForMode('fill_slot');
+      })();
+      return;
+    }
+
     if (listenModeRef.current === 'ask_schedule_note') {
       void (async () => {
         await speakThen(yesNoHint(await getSecretinaLanguage()));
@@ -746,8 +932,13 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
     setErrorMsg('');
     setAmbiguous([]);
     ambiguousRef.current = [];
+    setAmbiguousSchedules([]);
+    ambiguousSchedulesRef.current = [];
     setPendingText('');
     pendingTextRef.current = '';
+    pendingActionsRef.current = null;
+    pendingReplyRef.current = '';
+    draftRef.current = null;
     setScheduleNotePreview('');
     setLiveTranscript('');
     liveTranscriptRef.current = '';
@@ -865,7 +1056,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
             contentContainerStyle={styles.sheetScroll}
           >
             <Text style={styles.title}>{t('assistant.title')}</Text>
-            {ambiguous.length === 0 ? (
+            {ambiguous.length === 0 && ambiguousSchedules.length === 0 ? (
               <Text style={styles.subtitle}>
                 {t('assistant.subtitle', { name: wakeName })}
               </Text>
@@ -881,13 +1072,16 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
               <Text style={styles.listening}>
                 {liveTranscript.trim()
                   ? liveTranscript
-                  : listenModeRef.current === 'pick_contact'
+                  : listenModeRef.current === 'pick_contact' ||
+                      listenModeRef.current === 'pick_schedule'
                     ? t('assistant.listening.pick')
-                    : listenModeRef.current === 'ask_schedule_note'
-                      ? t('assistant.listening.yesNo')
-                      : listenModeRef.current === 'dictate_schedule_note'
-                        ? t('assistant.listening.dictate')
-                        : t('assistant.listening.command')}
+                    : listenModeRef.current === 'fill_slot'
+                      ? t('assistant.listening.fillSlot')
+                      : listenModeRef.current === 'ask_schedule_note'
+                        ? t('assistant.listening.yesNo')
+                        : listenModeRef.current === 'dictate_schedule_note'
+                          ? t('assistant.listening.dictate')
+                          : t('assistant.listening.command')}
               </Text>
             ) : null}
 
@@ -934,7 +1128,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                           {scheduleNotePreview}
                         </Text>
                       </>
-                    ) : result.kind === 'schedule' ? (
+                    ) : result.kind === 'schedule' && result.askScheduleNote ? (
                       <>
                         <Text style={styles.label}>
                           {t('assistant.label.askScheduleNote')}
@@ -948,6 +1142,13 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
                           title={t('assistant.cta.dictateNote')}
                           onTranscript={(tx) => void onScheduleNoteDictated(tx)}
                         />
+                      </>
+                    ) : result.kind === 'schedule' && result.noteBody ? (
+                      <>
+                        <Text style={styles.label}>
+                          {t('assistant.label.scheduleNote')}
+                        </Text>
+                        <Text style={styles.notePreview}>{result.noteBody}</Text>
                       </>
                     ) : null}
                   </>
@@ -1008,6 +1209,31 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
               </>
             ) : null}
 
+            {ambiguousSchedules.length > 0 ? (
+              <>
+                <Text style={styles.label}>
+                  {t('assistant.label.pickSchedule')}
+                </Text>
+                <View style={styles.pickList}>
+                  {ambiguousSchedules.map((s, i) => (
+                    <Pressable
+                      key={s.id}
+                      style={styles.pickRow}
+                      onPress={() => pickSchedule(s)}
+                    >
+                      <Text style={styles.pickText}>
+                        {i + 1}. {s.contact_name?.trim() || t('assistant.unnamed')}
+                      </Text>
+                      <Text style={styles.pickHint}>
+                        {formatDateTime(s.scheduled_at)}
+                        {s.note?.trim() ? ` · ${s.note.trim()}` : ''}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
             {phase === 'listening' ? (
               <Button
                 title={t('assistant.cta.stop')}
@@ -1027,7 +1253,7 @@ export function SecretinaAssistantModal({ visible, onClose }: Props) {
               />
             )}
 
-            {ambiguous.length === 0 ? (
+            {ambiguous.length === 0 && ambiguousSchedules.length === 0 ? (
               <>
                 <Text style={styles.label}>{t('assistant.label.typed')}</Text>
                 <TextInput
